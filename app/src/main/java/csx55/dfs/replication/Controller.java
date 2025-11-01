@@ -51,7 +51,7 @@ public class Controller implements Node {
     @Override
     public void startNode() {
         try(ServerSocket serverSocket = new ServerSocket(port)) {
-            log.info("Discovery node is up and running. Listening on port: " + port);
+            log.info("Controller node launched. Listening on port: " + port);
             while(true) {
                 Socket clientSocket = serverSocket.accept();
                 InetSocketAddress client = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
@@ -61,7 +61,7 @@ public class Controller implements Node {
                 socketToConn.put(clientSocket, conn);
             }
         } catch(IOException e) {
-            log.log(Level.WARNING, "Exception while starting discovery node...", e);
+            warning.accept(e);
         }
     }
 
