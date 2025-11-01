@@ -12,13 +12,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Controller implements Node {
 
     private final Logger log = Logger.getLogger(this.getClass().getName());
-    private final Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
+    private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
+    private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
 
     private final int port;
 
@@ -26,11 +28,24 @@ public class Controller implements Node {
 
     public Controller(int port) {
         this.port = port;
+        startEvents();
     }
 
     @Override
     public void onEvent(Event event, Socket socket) {
+        if(event != null) {
+            BiConsumer<Event, Socket> biConsumer = events.get(event.getType());
+            biConsumer.accept(event, socket);
+        } else {
+            warning.accept(new Exception("event is null"));
+        }
+    }
 
+    @Override
+    public void startEvents() {
+        events = Map.of(
+
+        );
     }
 
     @Override

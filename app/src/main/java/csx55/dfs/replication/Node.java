@@ -7,4 +7,6 @@ public interface Node {
     void onEvent(Event event, Socket socket);
 
     void startNode();
+
+    void startEvents();
 }
