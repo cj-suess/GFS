@@ -73,10 +73,10 @@ public class Controller implements Node {
     private void handleRegisterRequest(Event event, Socket socket) {
         log.info("Register request detected. Checking status...");
         TCPConnection conn = socketToConn.get(socket);
-        TCPSender sender = conn.getSender();
         Register registerEvent = (Register) event;
-        if (!serverToConn.containsKey(registerEvent.getChunkServerInfo())) {
-            serverToConn.put(registerEvent.getChunkServerInfo(), conn);
+        ConnInfo chunkServerInfo = registerEvent.getChunkServerInfo();
+        if (!serverToConn.containsKey(chunkServerInfo)) {
+            serverToConn.put(chunkServerInfo, conn);
             log.info(() -> registerEvent.getChunkServerInfo() + " was added to the list successfully!\n" + "\tCurrent number of chunk servers available: " + serverToConn.size());
         }
     }

@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class ChunkServer implements Node, Comparable<ChunkServer> {
+public class ChunkServer implements Node {
 
     private Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
@@ -93,10 +93,5 @@ public class ChunkServer implements Node, Comparable<ChunkServer> {
         LogConfig.init(Level.INFO);
         ChunkServer server = new ChunkServer(args[0], Integer.parseInt(args[1]));
         new Thread(server::startNode).start();
-    }
-
-    @Override
-    public int compareTo(ChunkServer o) {
-        return Integer.compare(this.freeSpace, o.freeSpace);
     }
 }
