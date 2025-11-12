@@ -1,14 +1,14 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
-import csx55.dfs.util.ConnInfo;
+import csx55.dfs.wireformats.ConnInfo;
 import csx55.dfs.util.LogConfig;
+import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.Event;
+import csx55.dfs.wireformats.Register;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,16 +19,23 @@ import java.util.logging.Logger;
 
 public class ChunkServer implements Node {
 
-    private final Logger log = Logger.getLogger(this.getClass().getName());
+    private final Object lock = new Object();
+
+    private Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
 
     private final ConnInfo controller;
+    private TCPConnection controllerConn;
+    private ConnInfo myConnInfo;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
 
+    private int freeSpace;
+
     public ChunkServer(String ip, int port) {
         this.controller = new ConnInfo(ip, port);
+        this.freeSpace = 0;
         startEvents();
     }
 
@@ -52,6 +59,9 @@ public class ChunkServer implements Node {
     @Override
     public void startNode() {
         try(ServerSocket serverSocket = new ServerSocket(0)) {
+            myConnInfo = new ConnInfo(InetAddress.getLocalHost().getHostAddress(), serverSocket.getLocalPort());
+            log = Logger.getLogger(ChunkServer.class.getName() + "[" + myConnInfo.toString() + "]");
+            register();
             while(true) {
                 Socket clientSocket = serverSocket.accept();
                 InetSocketAddress client = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
@@ -64,6 +74,22 @@ public class ChunkServer implements Node {
             warning.accept(e);
         }
     }
+
+    private void register() {
+        try{
+            Socket socket = new Socket(controller.getIP(), controller.getPort());
+            controllerConn = new TCPConnection(socket, this);
+            Register registerMessage = new Register(Protocol.REGISTER_REQUEST, getMyConnInfo());
+            controllerConn.startReceiverThread();
+            controllerConn.sender.sendData(registerMessage.getBytes());
+        } catch(IOException e) {
+            warning.accept(e);
+        }
+    }
+
+    public ConnInfo getMyConnInfo() { return myConnInfo; }
+
+    public int getFreeSpace() { return freeSpace; }
 
     public static void main(String[] args) {
         LogConfig.init(Level.INFO);

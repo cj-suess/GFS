@@ -11,7 +11,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.logging.Logger;
 
-public class TCPReceiverThread {
+public class TCPReceiverThread implements Runnable {
 
     private final Socket socket;
     private final DataInputStream din;

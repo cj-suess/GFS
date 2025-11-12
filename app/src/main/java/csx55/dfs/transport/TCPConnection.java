@@ -20,7 +20,7 @@ public class TCPConnection {
     }
 
     public void startReceiverThread() {
-        new Thread((Runnable)receiver).start();
+        new Thread(receiver).start();
     }
 
     public TCPSender getSender() {
