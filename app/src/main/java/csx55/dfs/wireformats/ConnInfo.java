@@ -1,4 +1,4 @@
-package csx55.dfs.util;
+package csx55.dfs.wireformats;
 
 import java.util.Objects;
 

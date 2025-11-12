@@ -1,8 +1,12 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
+import csx55.dfs.transport.TCPSender;
+import csx55.dfs.wireformats.ConnInfo;
 import csx55.dfs.util.LogConfig;
+import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.Event;
+import csx55.dfs.wireformats.Register;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -25,6 +29,7 @@ public class Controller implements Node {
     private final int port;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
+    private final Map<ConnInfo, TCPConnection> serverToConn = new ConcurrentHashMap<>();
 
     public Controller(int port) {
         this.port = port;
@@ -44,7 +49,7 @@ public class Controller implements Node {
     @Override
     public void startEvents() {
         events = Map.of(
-
+                Protocol.REGISTER_REQUEST, this::handleRegisterRequest
         );
     }
 
@@ -62,6 +67,17 @@ public class Controller implements Node {
             }
         } catch(IOException e) {
             warning.accept(e);
+        }
+    }
+
+    private void handleRegisterRequest(Event event, Socket socket) {
+        log.info("Register request detected. Checking status...");
+        TCPConnection conn = socketToConn.get(socket);
+        TCPSender sender = conn.getSender();
+        Register registerEvent = (Register) event;
+        if (!serverToConn.containsKey(registerEvent.getChunkServerInfo())) {
+            serverToConn.put(registerEvent.getChunkServerInfo(), conn);
+            log.info(() -> registerEvent.getChunkServerInfo() + " was added to the list successfully!\n" + "\tCurrent number of chunk servers available: " + serverToConn.size());
         }
     }
 
