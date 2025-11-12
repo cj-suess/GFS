@@ -15,11 +15,11 @@ public class EventFactory {
     private final static Logger log = Logger.getLogger(EventFactory.class.getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private final byte[] data;
-    private final Map<Integer, EventReader> readers;
+    private Map<Integer, EventReader> readers = new HashMap<>();
 
     public EventFactory(byte[] data) {
         this.data = data;
-        this.readers = startReaders();
+        startReaders();
     }
 
     public Event createEvent() {
@@ -34,12 +34,23 @@ public class EventFactory {
         return null;
     }
 
-    private Map<Integer, EventReader> startReaders() {
-        Map<Integer, EventReader> readers = new HashMap<>();
-        readers.put(Protocol.REGISTER_REQUEST, this::readRegisterRequest);
-        return readers;
+    private void startReaders() {
+        readers = Map.of(
+                Protocol.REGISTER_REQUEST, this::readRegisterRequest,
+                Protocol.HEARTBEAT, this::readHeartbeat
+        );
     }
 
+    private Event readRegisterRequest(int messageType, DataInputStream dis) throws IOException {
+        ConnInfo chunkServerInfo = readConnInfo(dis);
+        return new Register(messageType, chunkServerInfo);
+    }
+
+    private Event readHeartbeat(int messageType, DataInputStream dis) throws IOException {
+        return new Heartbeat(messageType, readConnInfo(dis), dis.readInt());
+    }
+
+    // utility methods
     private String readString(DataInputStream dis) throws IOException {
         int length = dis.readInt();
         byte[] bytes = new byte[length];
@@ -47,12 +58,7 @@ public class EventFactory {
         return new String(bytes);
     }
 
-    private Event readRegisterRequest(int messageType, DataInputStream dis) throws IOException {
-        ConnInfo chunkServerInfo = readPeerInfo(dis);
-        return new Register(messageType, chunkServerInfo);
-    }
-
-    private ConnInfo readPeerInfo(DataInputStream dis) throws IOException {
+    private ConnInfo readConnInfo (DataInputStream dis) throws IOException {
         String ip = readString(dis);
         int port = dis.readInt();
         return new ConnInfo(ip, port);

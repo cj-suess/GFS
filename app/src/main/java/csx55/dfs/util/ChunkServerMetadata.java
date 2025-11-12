@@ -30,7 +30,7 @@ public class ChunkServerMetadata implements Comparable<ChunkServerMetadata> {
 
     @Override
     public int compareTo(ChunkServerMetadata o) {
-        int spaceCompare = Integer.compare(this.freeSpace, o.freeSpace);
+        int spaceCompare = Integer.compare(o.freeSpace, this.freeSpace); // flip to keep higher space at top?
         if(spaceCompare != 0) return spaceCompare;
         return this.connInfo.compareTo(o.connInfo);
     }
@@ -40,7 +40,7 @@ public class ChunkServerMetadata implements Comparable<ChunkServerMetadata> {
         if (this == o) return true;
         if (!(o instanceof ChunkServerMetadata)) return false;
         ChunkServerMetadata other = (ChunkServerMetadata) o;
-        return Objects.equals(connInfo, other.connInfo) && freeSpace == other.freeSpace;
+        return Objects.equals(connInfo, other.connInfo);
     }
 
     @Override

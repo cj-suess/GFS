@@ -19,6 +19,8 @@ import java.util.logging.Logger;
 
 public class ChunkServer implements Node {
 
+    private final Object lock = new Object();
+
     private Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();

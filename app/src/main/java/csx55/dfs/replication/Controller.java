@@ -1,11 +1,12 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
-import csx55.dfs.transport.TCPSender;
+import csx55.dfs.util.ChunkServerMetadata;
 import csx55.dfs.wireformats.ConnInfo;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.Event;
+import csx55.dfs.wireformats.Heartbeat;
 import csx55.dfs.wireformats.Register;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -21,6 +23,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Controller implements Node {
+
+    private final Object lock = new Object();
 
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
@@ -30,6 +34,9 @@ public class Controller implements Node {
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
     private final Map<ConnInfo, TCPConnection> serverToConn = new ConcurrentHashMap<>();
+
+    private final PriorityQueue<ChunkServerMetadata> serversBySpace = new PriorityQueue<>();
+    private final Map<ConnInfo, ChunkServerMetadata> chunkServers = new ConcurrentHashMap<>();
 
     public Controller(int port) {
         this.port = port;
@@ -49,7 +56,8 @@ public class Controller implements Node {
     @Override
     public void startEvents() {
         events = Map.of(
-                Protocol.REGISTER_REQUEST, this::handleRegisterRequest
+                Protocol.REGISTER_REQUEST, this::handleRegisterRequest,
+                Protocol.HEARTBEAT, this::handleHeartbeat
         );
     }
 
@@ -77,7 +85,31 @@ public class Controller implements Node {
         ConnInfo chunkServerInfo = registerEvent.getChunkServerInfo();
         if (!serverToConn.containsKey(chunkServerInfo)) {
             serverToConn.put(chunkServerInfo, conn);
+            ChunkServerMetadata metadata = new ChunkServerMetadata(chunkServerInfo);
+            chunkServers.put(chunkServerInfo, metadata);
+            synchronized (lock) {
+                serversBySpace.add(metadata);
+            }
             log.info(() -> registerEvent.getChunkServerInfo() + " was added to the list successfully!\n" + "\tCurrent number of chunk servers available: " + serverToConn.size());
+        }
+    }
+
+    private void handleHeartbeat(Event event, Socket socket) {
+        Heartbeat heartbeat = (Heartbeat) event;
+        ConnInfo chunkServerInfo = heartbeat.getConnInfo();
+        int freeSpace = heartbeat.getFreeSpace();
+        ChunkServerMetadata metaData = chunkServers.get(chunkServerInfo);
+        if(metaData != null) {
+            updateSpace(metaData, freeSpace);
+            log.info(() -> "Updated free space for " + chunkServerInfo + " --> " + freeSpace);
+        }
+    }
+
+    private void updateSpace(ChunkServerMetadata metaData, int freeSpace) {
+        synchronized (lock) {
+            serversBySpace.remove(metaData);
+            metaData.setFreeSpace(freeSpace);
+            serversBySpace.add(metaData);
         }
     }
 
