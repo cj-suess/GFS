@@ -39,9 +39,19 @@ public class EventFactory {
     private void startReaders() {
         readers = Map.of(
                 Protocol.REGISTER_REQUEST, this::readRegisterRequest,
+                Protocol.SERVER_REQUEST, this::readServerRequest,
+                Protocol.SERVER_RESPONSE, this::readServerResponse,
                 Protocol.HEARTBEAT, this::readHeartbeat,
                 Protocol.STORE_REQUEST, this::readStoreRequest
         );
+    }
+
+    private Event readServerResponse(int messageType, DataInputStream dis) throws IOException {
+        return new ServerResponse(messageType, dis);
+    }
+
+    private Event readServerRequest(int messageType, DataInputStream dis) throws IOException {
+        return new ServerRequest(messageType);
     }
 
     private Event readStoreRequest(int messageType, DataInputStream dis) throws IOException {

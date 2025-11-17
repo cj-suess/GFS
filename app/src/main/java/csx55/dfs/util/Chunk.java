@@ -14,16 +14,18 @@ public class Chunk {
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
 
-    private byte[] data;
-    private int chunkIndex;
-    private Converter converter;
-    private List<ConnInfo> locations = new ArrayList<>(); // list of where chunk replications are stored
-    private Map<Integer, String> slices = new HashMap<>(); // mapping slice index to checksum hex
+    private final Converter converter;
+    private final byte[] data;
+    private final int chunkIndex;
+    private final String checksum;
+    private final List<ConnInfo> locations = new ArrayList<>(); // list of where chunk replications are stored
+    private final Map<Integer, String> slices = new HashMap<>(); // mapping slice index to checksum hex
 
     public Chunk(byte[] data, int chunkIndex) {
+        this.converter = Converter.getConverter();
         this.data = data;
         this.chunkIndex = chunkIndex;
-        this.converter = Converter.getConverter();
+        this.checksum = createChecksum();
         createSlices();
     }
 
@@ -42,6 +44,19 @@ public class Chunk {
         } catch(NoSuchAlgorithmException e) {
             warning.accept(e);
         }
+    }
+
+    private String createChecksum() {
+        String checksum = null;
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            int size =  data.length;
+            byte[] hash = md.digest(data);
+            checksum = converter.convertBytesToHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            warning.accept(e);
+        }
+        return checksum;
     }
 
     public byte[] getData() {

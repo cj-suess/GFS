@@ -12,7 +12,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -23,7 +25,7 @@ public class Client implements Node{
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
 
-    private final Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
+    private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
     private final Map<String, Consumer<String[]>> commands = new HashMap<>();
 
     private final ConnInfo controllerInfo;
@@ -31,6 +33,7 @@ public class Client implements Node{
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
     private final Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
+    private final BlockingQueue<Queue<ConnInfo>> responseQueue = new LinkedBlockingQueue<>();
 
     public Client(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
@@ -51,7 +54,9 @@ public class Client implements Node{
 
     @Override
     public void startEvents() {
-
+        events = Map.of(
+                Protocol.SERVER_RESPONSE, this::handleServerResponse
+        );
     }
 
     @Override
@@ -136,17 +141,17 @@ public class Client implements Node{
         Queue<ConnInfo> servers = new LinkedList<>();
         try {
             Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
-            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
-            ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
-            // send request
-            ServerRequest request = new ServerRequest(Protocol.SERVER_REQUEST);
-            oos.writeObject(request);
-            oos.flush();
-            // read response
-            ServerResponse response = (ServerResponse) ois.readObject();
+            TCPConnection conn = new  TCPConnection(socket, this);
+            ServerRequest serverRequest = new ServerRequest(Protocol.SERVER_REQUEST);
+            conn.sender.sendData(serverRequest.getBytes());
+            conn.startReceiverThread();
+            socketToConn.put(socket, conn);
+            Queue<ConnInfo> response = responseQueue.poll(1, TimeUnit.SECONDS);
             socket.close();
-            return response.getServers();
-        } catch(IOException | ClassNotFoundException e) {
+            if(response != null) {
+                servers.addAll(response);
+            }
+        } catch(IOException | InterruptedException e) {
             warning.accept(e);
         }
         return servers;
@@ -162,6 +167,15 @@ public class Client implements Node{
             conn.startReceiverThread();
             conn.sender.sendData(storeRequest.getBytes());
         } catch(IOException e) {
+            warning.accept(e);
+        }
+    }
+
+    private void handleServerResponse(Event event, Socket socket) {
+        ServerResponse serverResponse = (ServerResponse) event;
+        try{
+            responseQueue.put(serverResponse.getServers());
+        } catch(InterruptedException e) {
             warning.accept(e);
         }
     }

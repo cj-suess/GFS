@@ -77,12 +77,13 @@ public class Controller implements Node {
     }
 
     private void handleServerRequest(Event event, Socket socket) {
+        log.info(() -> "Received server request...");
         Queue<ConnInfo> servers = selectServers();
-        ServerResponse response = new ServerResponse(servers);
+        log.info("Selected " + servers.size() + " servers to send back");
+        ServerResponse response = new ServerResponse(Protocol.SERVER_RESPONSE, servers);
+        TCPConnection conn = socketToConn.get(socket);
         try{
-            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
-            oos.writeObject(response);
-            oos.flush();
+            conn.sender.sendData(response.getBytes());
         } catch (IOException e) {
             warning.accept(e);
         }

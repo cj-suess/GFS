@@ -8,6 +8,7 @@ import csx55.dfs.wireformats.Event;
 import csx55.dfs.wireformats.Register;
 import csx55.dfs.wireformats.StoreRequest;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -87,7 +88,9 @@ public class ChunkServer implements Node {
             String netID =   storeRequest.getNetID();
             Queue<ConnInfo> servers = storeRequest.getServers();
             String path = String.format("/tmp/%s/chunk_server/%s_chunk%d",netID,destination,chunkIndex);
-            try(FileOutputStream fos = new FileOutputStream(path)) {
+            File chunkFile = new File(path);
+            chunkFile.getParentFile().mkdirs();
+            try(FileOutputStream fos = new FileOutputStream(chunkFile)) {
                 fos.write(chunkData);
             }
             freeSpace -= chunkData.length;

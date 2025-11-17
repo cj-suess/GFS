@@ -7,11 +7,11 @@ import java.util.Queue;
 public class StoreRequest extends Event {
 
     private final int messageType;
-    private byte[] chunkData;
-    private int chunkIndex;
-    private String destination;
-    private String netID;
-    private Queue<ConnInfo> servers;
+    private final byte[] chunkData;
+    private final int chunkIndex;
+    private final String destination;
+    private final String netID;
+    private final Queue<ConnInfo> servers;
 
     public StoreRequest(int messageType, byte[] chunkData, int chunkIndex, String destination, String netID,  Queue<ConnInfo> servers) {
         this.messageType = messageType;
