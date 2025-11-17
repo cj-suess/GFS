@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -76,8 +77,7 @@ public class Controller implements Node {
     }
 
     private void handleServerRequest(Event event, Socket socket) {
-        ServerRequest request = (ServerRequest) event;
-        List<ConnInfo> servers = selectServers();
+        Queue<ConnInfo> servers = selectServers();
         ServerResponse response = new ServerResponse(servers);
         try{
             ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
@@ -88,8 +88,8 @@ public class Controller implements Node {
         }
     }
 
-    private List<ConnInfo> selectServers() {
-        List<ConnInfo> servers = new ArrayList<>();
+    private Queue<ConnInfo> selectServers() {
+        Queue<ConnInfo> servers = new LinkedList<>();
         synchronized (lock) {
             List<ChunkServerMetadata> temp = new ArrayList<>();
             for(int i = 0; i < 3; i++){

@@ -6,7 +6,9 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.function.Consumer;
 import java.util.logging.*;
 
@@ -37,8 +39,13 @@ public class EventFactory {
     private void startReaders() {
         readers = Map.of(
                 Protocol.REGISTER_REQUEST, this::readRegisterRequest,
-                Protocol.HEARTBEAT, this::readHeartbeat
+                Protocol.HEARTBEAT, this::readHeartbeat,
+                Protocol.STORE_REQUEST, this::readStoreRequest
         );
+    }
+
+    private Event readStoreRequest(int messageType, DataInputStream dis) throws IOException {
+        return new StoreRequest(messageType, readChunkData(dis), dis.readInt(), readString(dis), readString(dis), readServers(dis));
     }
 
     private Event readRegisterRequest(int messageType, DataInputStream dis) throws IOException {
@@ -62,5 +69,23 @@ public class EventFactory {
         String ip = readString(dis);
         int port = dis.readInt();
         return new ConnInfo(ip, port);
+    }
+
+    private byte[] readChunkData(DataInputStream dis) throws IOException {
+        int dataLen = dis.readInt();
+        byte[] bytes = new byte[dataLen];
+        dis.readFully(bytes);
+        return bytes;
+    }
+
+    private Queue<ConnInfo> readServers(DataInputStream dis) throws IOException {
+        int queueSize = dis.readInt();
+        Queue<ConnInfo> queue = new LinkedList<>();
+        for(int i = 0; i < queueSize; i++) {
+            String ip = readString(dis);
+            int port = dis.readInt();
+            queue.add(new ConnInfo(ip, port));
+        }
+        return queue;
     }
 }

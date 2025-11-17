@@ -6,11 +6,15 @@ import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.Event;
 import csx55.dfs.wireformats.Register;
+import csx55.dfs.wireformats.StoreRequest;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -25,8 +29,7 @@ public class ChunkServer implements Node {
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
 
-    private final ConnInfo controller;
-    private TCPConnection controllerConn;
+    private final ConnInfo controllerInfo;
     private ConnInfo myConnInfo;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
@@ -34,7 +37,7 @@ public class ChunkServer implements Node {
     private int freeSpace;
 
     public ChunkServer(String ip, int port) {
-        this.controller = new ConnInfo(ip, port);
+        this.controllerInfo = new ConnInfo(ip, port);
         this.freeSpace = 0;
         startEvents();
     }
@@ -52,7 +55,7 @@ public class ChunkServer implements Node {
     @Override
     public void startEvents() {
         events = Map.of(
-
+            Protocol.STORE_REQUEST, this::handleStoreRequest
         );
     }
 
@@ -60,7 +63,7 @@ public class ChunkServer implements Node {
     public void startNode() {
         try(ServerSocket serverSocket = new ServerSocket(0)) {
             myConnInfo = new ConnInfo(InetAddress.getLocalHost().getHostAddress(), serverSocket.getLocalPort());
-            log = Logger.getLogger(ChunkServer.class.getName() + "[" + myConnInfo.toString() + "]");
+            log = Logger.getLogger(ChunkServer.class.getName() + "[" + myConnInfo + "]");
             register();
             while(true) {
                 Socket clientSocket = serverSocket.accept();
@@ -75,10 +78,45 @@ public class ChunkServer implements Node {
         }
     }
 
+    private void handleStoreRequest(Event event, Socket socket) {
+        try{
+            StoreRequest storeRequest = (StoreRequest) event;
+            byte[] chunkData =  storeRequest.getChunkData();
+            int chunkIndex =  storeRequest.getChunkIndex();
+            String destination =  storeRequest.getDestination();
+            String netID =   storeRequest.getNetID();
+            Queue<ConnInfo> servers = storeRequest.getServers();
+            String path = String.format("/tmp/%s/chunk_server/%s_chunk%d",netID,destination,chunkIndex);
+            try(FileOutputStream fos = new FileOutputStream(path)) {
+                fos.write(chunkData);
+            }
+            freeSpace -= chunkData.length;
+            if(!servers.isEmpty()){
+                forward(storeRequest, servers);
+            }
+        } catch (IOException e) {
+            warning.accept(e);
+        }
+    }
+
+    private void forward(StoreRequest oldRequest, Queue<ConnInfo> servers) {
+        try{
+            ConnInfo nextServer = servers.poll();
+            log.info(() -> "Forwarding chunk to next server: " + nextServer);
+            StoreRequest newRequest = new StoreRequest(Protocol.STORE_REQUEST, oldRequest.getChunkData(), oldRequest.getChunkIndex(), oldRequest.getDestination(), oldRequest.getNetID(), servers);
+            Socket socket = new Socket(nextServer.getIP(), nextServer.getPort());
+            TCPConnection conn = new TCPConnection(socket, this);
+            conn.startReceiverThread();
+            conn.sender.sendData(newRequest.getBytes());
+        } catch(Exception e) {
+            warning.accept(e);
+        }
+    }
+
     private void register() {
         try{
-            Socket socket = new Socket(controller.getIP(), controller.getPort());
-            controllerConn = new TCPConnection(socket, this);
+            Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
+            TCPConnection controllerConn = new TCPConnection(socket, this);
             Register registerMessage = new Register(Protocol.REGISTER_REQUEST, getMyConnInfo());
             controllerConn.startReceiverThread();
             controllerConn.sender.sendData(registerMessage.getBytes());

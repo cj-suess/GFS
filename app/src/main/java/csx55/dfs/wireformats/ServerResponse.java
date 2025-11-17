@@ -10,9 +10,9 @@ import java.util.*;
 public class ServerResponse extends Event implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private final List<ConnInfo> servers;
+    private final Queue<ConnInfo> servers;
 
-    public ServerResponse(List<ConnInfo> servers) {
+    public ServerResponse(Queue<ConnInfo> servers) {
         this.servers = servers;
     }
 
@@ -23,10 +23,10 @@ public class ServerResponse extends Event implements Serializable {
 
     @Override
     void marshalData(DataOutputStream dout) throws IOException {
-        
+
     }
 
-    public List<ConnInfo> getServers() {
+    public Queue<ConnInfo> getServers() {
         return servers;
     }
 

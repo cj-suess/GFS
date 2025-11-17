@@ -4,16 +4,12 @@ import csx55.dfs.transport.TCPConnection;
 import csx55.dfs.util.Chunk;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
-import csx55.dfs.wireformats.ConnInfo;
-import csx55.dfs.wireformats.Event;
-import csx55.dfs.wireformats.ServerRequest;
-import csx55.dfs.wireformats.ServerResponse;
+import csx55.dfs.wireformats.*;
 
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -27,16 +23,18 @@ public class Client implements Node{
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
 
-    private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
+    private final Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
     private final Map<String, Consumer<String[]>> commands = new HashMap<>();
 
     private final ConnInfo controllerInfo;
+    private final String netID;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
     private final Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
 
     public Client(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
+        netID = "camsuess";
         startEvents();
         startCommands();
     }
@@ -59,7 +57,7 @@ public class Client implements Node{
     @Override
     public void startNode() {
         try(ServerSocket serverSocket = new ServerSocket(0)) {
-            while(true) {
+             while(true) {
                 Socket clientSocket = serverSocket.accept();
                 InetSocketAddress client = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
                 log.info("New connection from: " + client.getAddress() + ":" + client.getPort());
@@ -103,21 +101,21 @@ public class Client implements Node{
             int chunkIndex = entry.getKey();
             Chunk chunk = entry.getValue();
             log.info(() -> "Uploading chunk: " + chunkIndex);
-            List<ConnInfo> servers = requestServers(); // get servers from controller
+            Queue<ConnInfo> servers = requestServers(); // get servers from controller
             for (ConnInfo server : servers) {
                 chunk.addLocation(server);
             }
             sendChunk(chunk, servers, destination); // send to first server and let handle the forwarding
         }
         log.info(() -> "Upload completed...");
-        files.put(destination, chunks); // add completed file to map
-        printChunkLocations();
+        files.put(source, chunks); // add completed file to map
+        printChunkLocations(source); // print ip:port for each replicate
     }
 
     private Map<Integer, Chunk> chunker(String source) {
         Map<Integer, Chunk> chunks = new LinkedHashMap<>();
         File file = new File(source);
-        try(FileInputStream fis = new FileInputStream(file);) {
+        try(FileInputStream fis = new FileInputStream(file)) {
             byte[] buffer = new byte[65536];
             int len;
             int chunkIndex = 0;
@@ -134,8 +132,8 @@ public class Client implements Node{
         return chunks;
     }
 
-    private List<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
-        List<ConnInfo> servers = new ArrayList<>();
+    private Queue<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
+        Queue<ConnInfo> servers = new LinkedList<>();
         try {
             Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
             ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
@@ -154,12 +152,27 @@ public class Client implements Node{
         return servers;
     }
 
-    private void sendChunk(Chunk chunk, List<ConnInfo> servers, String destination) {
-
+    private void sendChunk(Chunk chunk, Queue<ConnInfo> servers, String destination) {
+        try{
+            ConnInfo firstServer = servers.poll();
+            log.info("Sending chunk to first server in list --> " + firstServer);
+            StoreRequest storeRequest = new StoreRequest(Protocol.STORE_REQUEST, chunk.getData(), chunk.getChunkIndex(), destination, netID, servers);
+            Socket socket = new Socket(firstServer.getIP(), firstServer.getPort());
+            TCPConnection  conn = new TCPConnection(socket, this);
+            conn.startReceiverThread();
+            conn.sender.sendData(storeRequest.getBytes());
+        } catch(IOException e) {
+            warning.accept(e);
+        }
     }
 
-    private void printChunkLocations() {
-
+    private void printChunkLocations(String source) {
+        Map<Integer, Chunk> chunks = files.get(source);
+        for(Chunk chunk : chunks.values()) {
+            for(ConnInfo server : chunk.getLocations()){
+                System.out.println(server);
+            }
+        }
     }
 
     public static void main(String[] args) {

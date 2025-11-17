@@ -17,7 +17,7 @@ public class ConnInfo implements Comparable<ConnInfo>, Serializable {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || !(o instanceof ConnInfo)) return false;
+        if (!(o instanceof ConnInfo)) return false;
         ConnInfo nodeID = (ConnInfo) o;
         return port == nodeID.port && ip.equals(nodeID.ip);
     }
