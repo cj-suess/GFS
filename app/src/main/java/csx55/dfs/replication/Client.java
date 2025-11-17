@@ -3,23 +3,20 @@ package csx55.dfs.replication;
 import csx55.dfs.transport.TCPConnection;
 import csx55.dfs.util.Chunk;
 import csx55.dfs.util.LogConfig;
+import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.ConnInfo;
 import csx55.dfs.wireformats.Event;
+import csx55.dfs.wireformats.ServerRequest;
+import csx55.dfs.wireformats.ServerResponse;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -31,12 +28,12 @@ public class Client implements Node{
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
 
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
-    private Map<String, Consumer<String[]>> commands = new HashMap<>();
+    private final Map<String, Consumer<String[]>> commands = new HashMap<>();
 
     private final ConnInfo controllerInfo;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
-    private Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
 
     public Client(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
@@ -56,9 +53,7 @@ public class Client implements Node{
 
     @Override
     public void startEvents() {
-        events = Map.of(
 
-        );
     }
 
     @Override
@@ -99,38 +94,72 @@ public class Client implements Node{
     }
 
     private void upload(String[] paths) {
-        String sourcePath = paths[0];
-        String destPath =  paths[1];
-        String fileName = Paths.get(sourcePath).getFileName().toString(); // get the filename from sourcePath
-        System.out.println(fileName);
-        Map<Integer, Chunk> chunks = new HashMap<>(); // map chunk index to chunk
-        chunker(sourcePath, 65536, chunks);
-        files.put(fileName, chunks);
+        String source = paths[0];
+        String destination = paths[1];
+
+        Map<Integer, Chunk> chunks = chunker(source); // break into chunks
+
+        for (Map.Entry<Integer, Chunk> entry : chunks.entrySet()) {
+            int chunkIndex = entry.getKey();
+            Chunk chunk = entry.getValue();
+            log.info(() -> "Uploading chunk: " + chunkIndex);
+            List<ConnInfo> servers = requestServers(); // get servers from controller
+            for (ConnInfo server : servers) {
+                chunk.addLocation(server);
+            }
+            sendChunk(chunk, servers, destination); // send to first server and let handle the forwarding
+        }
+        log.info(() -> "Upload completed...");
+        files.put(destination, chunks); // add completed file to map
+        printChunkLocations();
     }
 
-    // Path to test.txt --> /s/chopin/k/grad/camsuess/test/test.txt
-
-    private void chunker(String filePath, int chunkSize, Map<Integer, Chunk> chunks) {
-        File file = new File(filePath);
+    private Map<Integer, Chunk> chunker(String source) {
+        Map<Integer, Chunk> chunks = new LinkedHashMap<>();
+        File file = new File(source);
         try(FileInputStream fis = new FileInputStream(file);) {
-            byte[] buffer = new byte[chunkSize];
+            byte[] buffer = new byte[65536];
             int len;
             int chunkIndex = 0;
-            while((len = fis.read(buffer)) != -1) {
-                String chunkName = filePath + "_"  + chunkIndex;
-                try(FileOutputStream fos = new FileOutputStream(chunkName)){
-                    fos.write(buffer, 0, len);
-                    // create chunk
-                    // get 3 random servers
-                        // add servers to chunk's location list
-                    // send chunk to first server
-                    // add chunk to chunks map
-                }
+            while ((len = fis.read(buffer)) != -1) {
+                byte[] data = Arrays.copyOf(buffer, len);
+                Chunk chunk = new Chunk(data, chunkIndex);
+                chunks.put(chunkIndex, chunk);
                 chunkIndex++;
             }
-        } catch (IOException e) {
+            log.info(() -> "File has been successfully chunked...");
+        } catch(IOException e) {
             warning.accept(e);
         }
+        return chunks;
+    }
+
+    private List<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
+        List<ConnInfo> servers = new ArrayList<>();
+        try {
+            Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
+            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+            ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
+            // send request
+            ServerRequest request = new ServerRequest(Protocol.SERVER_REQUEST);
+            oos.writeObject(request);
+            oos.flush();
+            // read response
+            ServerResponse response = (ServerResponse) ois.readObject();
+            socket.close();
+            return response.getServers();
+        } catch(IOException | ClassNotFoundException e) {
+            warning.accept(e);
+        }
+        return servers;
+    }
+
+    private void sendChunk(Chunk chunk, List<ConnInfo> servers, String destination) {
+
+    }
+
+    private void printChunkLocations() {
+
     }
 
     public static void main(String[] args) {

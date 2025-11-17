@@ -1,8 +1,10 @@
 package csx55.dfs.wireformats;
 
+import java.io.Serializable;
 import java.util.Objects;
 
-public class ConnInfo implements Comparable<ConnInfo> {
+public class ConnInfo implements Comparable<ConnInfo>, Serializable {
+    private static final long serialVersionUID = 1L;
 
     private final String ip;
     private final int port;

@@ -2,20 +2,16 @@ package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
 import csx55.dfs.util.ChunkServerMetadata;
-import csx55.dfs.wireformats.ConnInfo;
+import csx55.dfs.wireformats.*;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
-import csx55.dfs.wireformats.Event;
-import csx55.dfs.wireformats.Heartbeat;
-import csx55.dfs.wireformats.Register;
 
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.PriorityQueue;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -57,7 +53,8 @@ public class Controller implements Node {
     public void startEvents() {
         events = Map.of(
                 Protocol.REGISTER_REQUEST, this::handleRegisterRequest,
-                Protocol.HEARTBEAT, this::handleHeartbeat
+                Protocol.HEARTBEAT, this::handleHeartbeat,
+                Protocol.SERVER_REQUEST, this::handleServerRequest
         );
     }
 
@@ -76,6 +73,34 @@ public class Controller implements Node {
         } catch(IOException e) {
             warning.accept(e);
         }
+    }
+
+    private void handleServerRequest(Event event, Socket socket) {
+        ServerRequest request = (ServerRequest) event;
+        List<ConnInfo> servers = selectServers();
+        ServerResponse response = new ServerResponse(servers);
+        try{
+            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+            oos.writeObject(response);
+            oos.flush();
+        } catch (IOException e) {
+            warning.accept(e);
+        }
+    }
+
+    private List<ConnInfo> selectServers() {
+        List<ConnInfo> servers = new ArrayList<>();
+        synchronized (lock) {
+            List<ChunkServerMetadata> temp = new ArrayList<>();
+            for(int i = 0; i < 3; i++){
+                ChunkServerMetadata server = serversBySpace.poll();
+                assert server != null;
+                servers.add(server.getConnInfo());
+                temp.add(server);
+            }
+            serversBySpace.addAll(temp);
+        }
+        return servers;
     }
 
     private void handleRegisterRequest(Event event, Socket socket) {
