@@ -2,6 +2,7 @@ package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
 import csx55.dfs.util.Chunk;
+import csx55.dfs.util.Converter;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
 import csx55.dfs.wireformats.*;
@@ -10,6 +11,8 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
@@ -30,6 +33,7 @@ public class Client implements Node{
 
     private final ConnInfo controllerInfo;
     private final String netID;
+    private final Converter converter;
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
     private final Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
@@ -37,7 +41,8 @@ public class Client implements Node{
 
     public Client(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
-        netID = "camsuess";
+        this.netID = "camsuess";
+        this.converter = Converter.getConverter();
         startEvents();
         startCommands();
     }
@@ -128,6 +133,10 @@ public class Client implements Node{
             while ((len = fis.read(buffer)) != -1) {
                 byte[] data = Arrays.copyOf(buffer, len);
                 Chunk chunk = new Chunk(data, chunkIndex);
+//                MessageDigest md = MessageDigest.getInstance("SHA-1");
+//                byte[] hash = md.digest(data);
+//                String checksum = converter.convertBytesToHex(hash);
+//                log.info(() -> "Checksum: " + checksum);
                 chunks.put(chunkIndex, chunk);
                 chunkIndex++;
             }
