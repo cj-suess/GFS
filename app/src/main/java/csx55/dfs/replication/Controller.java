@@ -25,6 +25,7 @@ public class Controller implements Node {
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
+    private final Map<String, Runnable> commands = new HashMap<>();
 
     private final int port;
 
@@ -38,6 +39,7 @@ public class Controller implements Node {
     public Controller(int port) {
         this.port = port;
         startEvents();
+        startCommands();
     }
 
     @Override
@@ -75,6 +77,44 @@ public class Controller implements Node {
             warning.accept(e);
         }
     }
+
+    private void readTerminal() {
+        try(Scanner scanner = new Scanner(System.in)) {
+            while(true) {
+                String command = scanner.nextLine();
+                Runnable cmd = commands.get(command);
+                if(cmd == null) {
+                    log.info(() -> "Please enter a valid command.");
+                } else {
+                    cmd.run();
+                }
+            }
+        } catch(NullPointerException e) {
+            warning.accept(e);
+        }
+    }
+
+    private void startCommands() {
+        commands.put("print-files", this::printFiles);
+    }
+
+    private void printFiles() {
+        log.info("========== CURRENT FILES ==========");
+        for (Map.Entry<String, Map<Integer, Set<ConnInfo>>> fileEntry : files.entrySet()) {
+            String fileName = fileEntry.getKey();
+            log.info("File: " + fileName);
+            Map<Integer, Set<ConnInfo>> chunkMap = fileEntry.getValue();
+            List<Integer> sortedChunks = new ArrayList<>(chunkMap.keySet());
+            Collections.sort(sortedChunks);
+            for (Integer chunkIndex : sortedChunks) {
+                log.info("   Chunk " + chunkIndex + " stored on:");
+                for (ConnInfo server : chunkMap.get(chunkIndex)) {
+                    log.info("      - " + server);
+                }
+            }
+        }
+    }
+
 
     private void handleServerRequest(Event event, Socket socket) {
         log.info(() -> "Received server request...");
@@ -151,5 +191,6 @@ public class Controller implements Node {
         LogConfig.init(Level.INFO);
         Controller controller = new Controller(Integer.parseInt(args[0]));
         new Thread(controller::startNode).start();
+        new Thread(controller::readTerminal).start();
     }
 }

@@ -105,12 +105,8 @@ public class ChunkServer implements Node {
             ChunkMetadata metadata = new ChunkMetadata(destination, chunkIndex, checksum, chunkData.length);
             synchronized (lock) {
 
-                allChunks.removeIf(m ->
-                        m.getFileName().equals(destination) &&
-                                m.getChunkIndex() == chunkIndex);
-                newChunkMetadata.removeIf(m ->
-                        m.getFileName().equals(destination) &&
-                                m.getChunkIndex() == chunkIndex);
+                allChunks.removeIf(m -> m.getFileName().equals(destination) && m.getChunkIndex() == chunkIndex);
+                newChunkMetadata.removeIf(m -> m.getFileName().equals(destination) && m.getChunkIndex() == chunkIndex);
 
                 allChunks.add(metadata);
                 newChunkMetadata.add(metadata);
@@ -218,7 +214,11 @@ public class ChunkServer implements Node {
     }
 
     private void printStoredChunks() {
-        for(ChunkMetadata chunk : allChunks) {
+        List<ChunkMetadata> chunksToPrint;
+        synchronized (lock) {
+            chunksToPrint = new ArrayList<>(allChunks);
+        }
+        for(ChunkMetadata chunk : chunksToPrint) {
             log.info("Chunk: " + chunk.getFileName() + " index=" + chunk.getChunkIndex() + " checksum=" + chunk.getChecksum());
         }
     }
