@@ -11,8 +11,6 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
@@ -129,7 +127,7 @@ public class Client implements Node{
         try(FileInputStream fis = new FileInputStream(file)) {
             byte[] buffer = new byte[65536];
             int len;
-            int chunkIndex = 0;
+            int chunkIndex = 1;
             while ((len = fis.read(buffer)) != -1) {
                 byte[] data = Arrays.copyOf(buffer, len);
                 Chunk chunk = new Chunk(data, chunkIndex);
@@ -156,7 +154,7 @@ public class Client implements Node{
             socketToConn.put(socket, conn);
             ServerRequest serverRequest = new ServerRequest(Protocol.SERVER_REQUEST);
             conn.sender.sendData(serverRequest.getBytes());
-            Queue<ConnInfo> response = responseQueue.poll(1, TimeUnit.SECONDS);
+            Queue<ConnInfo> response = responseQueue.poll(5, TimeUnit.SECONDS);
             if(response != null) {
                 servers.addAll(response);
                 log.info("Received " + servers.size() + " servers: " + servers);

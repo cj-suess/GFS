@@ -1,6 +1,7 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
+import csx55.dfs.util.ChunkMetadata;
 import csx55.dfs.util.ChunkServerMetadata;
 import csx55.dfs.wireformats.*;
 import csx55.dfs.util.LogConfig;
@@ -32,6 +33,7 @@ public class Controller implements Node {
 
     private final PriorityQueue<ChunkServerMetadata> serversBySpace = new PriorityQueue<>();
     private final Map<ConnInfo, ChunkServerMetadata> chunkServers = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Set<ConnInfo>>> files = new ConcurrentHashMap<>();
 
     public Controller(int port) {
         this.port = port;
@@ -121,15 +123,20 @@ public class Controller implements Node {
     private void handleHeartbeat(Event event, Socket socket) {
         Heartbeat heartbeat = (Heartbeat) event;
         ConnInfo chunkServerInfo = heartbeat.getConnInfo();
-        int freeSpace = heartbeat.getFreeSpace();
+        long freeSpace = heartbeat.getFreeSpace();
         ChunkServerMetadata metaData = chunkServers.get(chunkServerInfo);
+        List<ChunkMetadata> chunks = heartbeat.getChunks();
         if(metaData != null) {
             updateSpace(metaData, freeSpace);
-            log.info(() -> "Updated free space for " + chunkServerInfo + " --> " + freeSpace);
         }
+        if(chunks.isEmpty()) { return; } // nothing to do
+        for(ChunkMetadata chunk : chunks) {
+            files.computeIfAbsent(chunk.getFileName(), k -> new ConcurrentHashMap<>()).put(chunk.getChunkIndex(), new HashSet<>()).add(chunkServerInfo);
+        }
+
     }
 
-    private void updateSpace(ChunkServerMetadata metaData, int freeSpace) {
+    private void updateSpace(ChunkServerMetadata metaData, long freeSpace) {
         synchronized (lock) {
             serversBySpace.remove(metaData);
             metaData.setFreeSpace(freeSpace);

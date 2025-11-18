@@ -8,7 +8,7 @@ import java.util.Objects;
 public class ChunkServerMetadata implements Comparable<ChunkServerMetadata> {
 
     private final ConnInfo connInfo;
-    private int freeSpace;
+    private long freeSpace;
     private long lastHeartBeat;
 
     public ChunkServerMetadata(ConnInfo connInfo) {
@@ -19,19 +19,19 @@ public class ChunkServerMetadata implements Comparable<ChunkServerMetadata> {
 
     public ConnInfo getConnInfo() { return connInfo; }
 
-    public int getFreeSpace() { return freeSpace; }
+    public long getFreeSpace() { return freeSpace; }
 
     public long getLastHeartBeat() { return lastHeartBeat; }
 
-    public void setFreeSpace(int freeSpace) {
+    public void setFreeSpace(long freeSpace) {
         this.freeSpace = freeSpace;
         this.lastHeartBeat = System.currentTimeMillis();
     }
 
     @Override
     public int compareTo(ChunkServerMetadata o) {
-        int spaceCompare = Integer.compare(o.freeSpace, this.freeSpace); // flip to keep higher space at top?
-        if(spaceCompare != 0) return spaceCompare;
+        long spaceCompare = Long.compare(o.freeSpace, this.freeSpace); // flip to keep higher space at top?
+        if(spaceCompare != 0) return (int) spaceCompare;
         return this.connInfo.compareTo(o.connInfo);
     }
 

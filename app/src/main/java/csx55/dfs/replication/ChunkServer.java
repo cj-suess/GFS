@@ -1,20 +1,19 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
-import csx55.dfs.wireformats.ConnInfo;
+import csx55.dfs.util.ChunkMetadata;
+import csx55.dfs.util.Converter;
+import csx55.dfs.wireformats.*;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
-import csx55.dfs.wireformats.Event;
-import csx55.dfs.wireformats.Register;
-import csx55.dfs.wireformats.StoreRequest;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.*;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -30,15 +29,21 @@ public class ChunkServer implements Node {
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
 
     private final ConnInfo controllerInfo;
+    private TCPConnection controllerConn;
+
     private ConnInfo myConnInfo;
+    private final Converter converter = Converter.getConverter();
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
 
-    private int freeSpace;
+    private final List<ChunkMetadata> allChunks = new ArrayList<>();
+    private final List<ChunkMetadata> newChunkMetadata = new ArrayList<>();
+
+    private long freeSpace;
 
     public ChunkServer(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
-        this.freeSpace = 0;
+        this.freeSpace = 1073741824L;
         startEvents();
     }
 
@@ -93,6 +98,14 @@ public class ChunkServer implements Node {
                 fos.write(chunkData);
             }
             freeSpace -= chunkData.length;
+            String checksum = computeChecksum(chunkData);
+            ChunkMetadata metadata = new ChunkMetadata(destination, chunkIndex, checksum, chunkData.length);
+            synchronized (lock) {
+                allChunks.add(metadata);
+                newChunkMetadata.add(metadata);
+            }
+            printStoredChunks();
+            log.info(() -> "Space remaining --> " + freeSpace);
             if(!servers.isEmpty()){
                 forward(storeRequest, servers);
             } else {
@@ -120,7 +133,7 @@ public class ChunkServer implements Node {
     private void register() {
         try{
             Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
-            TCPConnection controllerConn = new TCPConnection(socket, this);
+            controllerConn = new TCPConnection(socket, this);
             Register registerMessage = new Register(Protocol.REGISTER_REQUEST, getMyConnInfo());
             controllerConn.startReceiverThread();
             controllerConn.sender.sendData(registerMessage.getBytes());
@@ -129,13 +142,80 @@ public class ChunkServer implements Node {
         }
     }
 
+    private void sendMinorHeartbeat() {
+        synchronized (lock) {
+            List<ChunkMetadata> sendNew = new ArrayList<>(newChunkMetadata);
+            Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendNew);
+            try{
+                if(controllerConn != null) {
+                    controllerConn.sender.sendData(heartbeat.getBytes());
+                    log.info("Sent minor heartbeat with " + sendNew.size() + " new chunks");
+                }
+            } catch(IOException e) {
+                warning.accept(e);
+            }
+            newChunkMetadata.clear();
+        }
+    }
+
+    private void sendMajorHeartbeat() {
+        synchronized (lock) {
+            List<ChunkMetadata> sendAll = new ArrayList<>(allChunks);
+            Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendAll);
+            try{
+                if(controllerConn != null) {
+                    controllerConn.sender.sendData(heartbeat.getBytes());
+                    log.info("Sent minor heartbeat with " + sendAll.size() + " new chunks");
+                }
+            } catch(IOException e) {
+                warning.accept(e);
+            }
+        }
+    }
+
+    private void startHeartbeat() {
+        int counter = 0;
+        while(true) {
+            try {
+                if(counter % 4 == 0) {
+                    sendMajorHeartbeat();
+                } else {
+                    sendMinorHeartbeat();
+                }
+                counter++;
+                Thread.sleep(15000);
+            } catch(InterruptedException e) {
+                warning.accept(e);
+            }
+        }
+    }
+
+    private String computeChecksum(byte[] data) {
+        String checksum = null;
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            byte[] hash = md.digest(data);
+            checksum = converter.convertBytesToHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            warning.accept(e);
+        }
+        return checksum;
+    }
+
+    private void printStoredChunks() {
+        for(ChunkMetadata chunk : allChunks) {
+            log.info("Checksum: " + chunk);
+        }
+    }
+
     public ConnInfo getMyConnInfo() { return myConnInfo; }
 
-    public int getFreeSpace() { return freeSpace; }
+    public long getFreeSpace() { return freeSpace; }
 
     public static void main(String[] args) {
         LogConfig.init(Level.INFO);
         ChunkServer server = new ChunkServer(args[0], Integer.parseInt(args[1]));
         new Thread(server::startNode).start();
+        new Thread(server::startHeartbeat).start();
     }
 }
