@@ -1,14 +1,13 @@
 package csx55.dfs.wireformats;
 
+import csx55.dfs.util.Chunk;
+import csx55.dfs.util.ChunkMetadata;
 import csx55.dfs.util.Protocol;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.*;
 
@@ -64,7 +63,7 @@ public class EventFactory {
     }
 
     private Event readHeartbeat(int messageType, DataInputStream dis) throws IOException {
-        return new Heartbeat(messageType, readConnInfo(dis), dis.readInt());
+        return new Heartbeat(messageType, readConnInfo(dis), dis.readLong(), dis.readInt(), readChunks(dis));
     }
 
     // utility methods
@@ -97,5 +96,18 @@ public class EventFactory {
             queue.add(new ConnInfo(ip, port));
         }
         return queue;
+    }
+
+    private List<ChunkMetadata> readChunks(DataInputStream dis) throws IOException {
+        int numChunks = dis.readInt();
+        List<ChunkMetadata> chunks = new ArrayList<>(numChunks);
+        for (int i = 0; i < numChunks; i++) {
+            String fileName = readString(dis);
+            int chunkIndex = dis.readInt();
+            String checksum = readString(dis);
+            int size = dis.readInt();
+            chunks.add(new ChunkMetadata(fileName, chunkIndex, checksum, size));
+        }
+        return chunks;
     }
 }

@@ -33,8 +33,8 @@ public class Chunk {
         try{
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             int sliceSize = 8192;
-            int sliceIndex = 0;
-            for(int i = 0; i < sliceSize; i+=sliceSize) {
+            int sliceIndex = 1;
+            for(int i = 0; i < data.length; i+=sliceSize) {
                 byte[] slice = Arrays.copyOfRange(data, i, Math.min(i + sliceSize, data.length));
                 byte[] hash =  md.digest(slice);
                 String checksum = converter.convertBytesToHex(hash);

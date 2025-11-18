@@ -1,6 +1,7 @@
 package csx55.dfs.replication;
 
 import csx55.dfs.transport.TCPConnection;
+import csx55.dfs.util.ChunkMetadata;
 import csx55.dfs.util.ChunkServerMetadata;
 import csx55.dfs.wireformats.*;
 import csx55.dfs.util.LogConfig;
@@ -24,6 +25,7 @@ public class Controller implements Node {
     private final Logger log = Logger.getLogger(this.getClass().getName());
     private final Consumer<Exception> warning = e -> log.log(Level.WARNING, e.getMessage(), e);
     private Map<Integer, BiConsumer<Event, Socket>> events = new HashMap<>();
+    private final Map<String, Runnable> commands = new HashMap<>();
 
     private final int port;
 
@@ -32,10 +34,12 @@ public class Controller implements Node {
 
     private final PriorityQueue<ChunkServerMetadata> serversBySpace = new PriorityQueue<>();
     private final Map<ConnInfo, ChunkServerMetadata> chunkServers = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Set<ConnInfo>>> files = new ConcurrentHashMap<>();
 
     public Controller(int port) {
         this.port = port;
         startEvents();
+        startCommands();
     }
 
     @Override
@@ -74,6 +78,44 @@ public class Controller implements Node {
         }
     }
 
+    private void readTerminal() {
+        try(Scanner scanner = new Scanner(System.in)) {
+            while(true) {
+                String command = scanner.nextLine();
+                Runnable cmd = commands.get(command);
+                if(cmd == null) {
+                    log.info(() -> "Please enter a valid command.");
+                } else {
+                    cmd.run();
+                }
+            }
+        } catch(NullPointerException e) {
+            warning.accept(e);
+        }
+    }
+
+    private void startCommands() {
+        commands.put("print-files", this::printFiles);
+    }
+
+    private void printFiles() {
+        log.info("========== CURRENT FILES ==========");
+        for (Map.Entry<String, Map<Integer, Set<ConnInfo>>> fileEntry : files.entrySet()) {
+            String fileName = fileEntry.getKey();
+            log.info("File: " + fileName);
+            Map<Integer, Set<ConnInfo>> chunkMap = fileEntry.getValue();
+            List<Integer> sortedChunks = new ArrayList<>(chunkMap.keySet());
+            Collections.sort(sortedChunks);
+            for (Integer chunkIndex : sortedChunks) {
+                log.info("   Chunk " + chunkIndex + " stored on:");
+                for (ConnInfo server : chunkMap.get(chunkIndex)) {
+                    log.info("      - " + server);
+                }
+            }
+        }
+    }
+
+
     private void handleServerRequest(Event event, Socket socket) {
         log.info(() -> "Received server request...");
         Queue<ConnInfo> servers = selectServers();
@@ -88,19 +130,22 @@ public class Controller implements Node {
     }
 
     private Queue<ConnInfo> selectServers() {
-        Queue<ConnInfo> servers = new LinkedList<>();
+        Queue<ConnInfo> chosen = new LinkedList<>();
         synchronized (lock) {
             List<ChunkServerMetadata> temp = new ArrayList<>();
-            for(int i = 0; i < 3; i++){
+            for (int i = 0; i < 3; i++) {
                 ChunkServerMetadata server = serversBySpace.poll();
-                assert server != null;
-                servers.add(server.getConnInfo());
+                if (server == null) break;
+                chosen.add(server.getConnInfo());
                 temp.add(server);
+                long newFree = server.getFreeSpace() - 65536; // update this while in-between heart beats
+                server.setFreeSpace(newFree);
             }
             serversBySpace.addAll(temp);
         }
-        return servers;
+        return chosen;
     }
+
 
     private void handleRegisterRequest(Event event, Socket socket) {
         log.info("Register request detected. Checking status...");
@@ -121,15 +166,19 @@ public class Controller implements Node {
     private void handleHeartbeat(Event event, Socket socket) {
         Heartbeat heartbeat = (Heartbeat) event;
         ConnInfo chunkServerInfo = heartbeat.getConnInfo();
-        int freeSpace = heartbeat.getFreeSpace();
+        long freeSpace = heartbeat.getFreeSpace();
         ChunkServerMetadata metaData = chunkServers.get(chunkServerInfo);
+        List<ChunkMetadata> chunks = heartbeat.getChunks();
         if(metaData != null) {
             updateSpace(metaData, freeSpace);
-            log.info(() -> "Updated free space for " + chunkServerInfo + " --> " + freeSpace);
+        }
+        if(chunks.isEmpty()) { return; } // nothing to do
+        for(ChunkMetadata chunk : chunks) {
+            files.computeIfAbsent(chunk.getFileName(), k -> new ConcurrentHashMap<>()).computeIfAbsent(chunk.getChunkIndex(), k -> new HashSet<>()).add(chunkServerInfo); // update metadata when uploading same file?
         }
     }
 
-    private void updateSpace(ChunkServerMetadata metaData, int freeSpace) {
+    private void updateSpace(ChunkServerMetadata metaData, long freeSpace) {
         synchronized (lock) {
             serversBySpace.remove(metaData);
             metaData.setFreeSpace(freeSpace);
@@ -137,9 +186,11 @@ public class Controller implements Node {
         }
     }
 
+
     public static void main(String[] args) {
         LogConfig.init(Level.INFO);
         Controller controller = new Controller(Integer.parseInt(args[0]));
         new Thread(controller::startNode).start();
+        new Thread(controller::readTerminal).start();
     }
 }

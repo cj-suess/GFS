@@ -37,7 +37,7 @@ public class TCPReceiverThread implements Runnable {
                 Event decodedEvent = ef.createEvent();
                 node.onEvent(decodedEvent, socket);
             } catch(SocketException | EOFException e) {
-                LOG.info("Connection closed by peer..." + socket.getRemoteSocketAddress());
+                //LOG.info("Connection closed by peer..." + socket.getRemoteSocketAddress());
                 break;
             } catch(IOException ioe) {
                 LOG.warning("IO exception caught reading data..." + ioe.getLocalizedMessage());
