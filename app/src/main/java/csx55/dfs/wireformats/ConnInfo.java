@@ -1,8 +1,10 @@
 package csx55.dfs.wireformats;
 
+import java.io.Serializable;
 import java.util.Objects;
 
-public class ConnInfo implements Comparable<ConnInfo> {
+public class ConnInfo implements Comparable<ConnInfo>, Serializable {
+    private static final long serialVersionUID = 1L;
 
     private final String ip;
     private final int port;
@@ -15,7 +17,7 @@ public class ConnInfo implements Comparable<ConnInfo> {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || !(o instanceof ConnInfo)) return false;
+        if (!(o instanceof ConnInfo)) return false;
         ConnInfo nodeID = (ConnInfo) o;
         return port == nodeID.port && ip.equals(nodeID.ip);
     }
