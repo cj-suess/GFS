@@ -70,6 +70,7 @@ public class ChunkServer implements Node {
             myConnInfo = new ConnInfo(InetAddress.getLocalHost().getHostAddress(), serverSocket.getLocalPort());
             log = Logger.getLogger(ChunkServer.class.getName() + "[" + myConnInfo + "]");
             register();
+            new Thread(this::startHeartbeat, "Heartbeat-" + myConnInfo).start();
             while(true) {
                 Socket clientSocket = serverSocket.accept();
                 InetSocketAddress client = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
@@ -94,13 +95,23 @@ public class ChunkServer implements Node {
             String path = String.format("/tmp/%s/chunk_server/%s_chunk%d",netID,destination,chunkIndex);
             File chunkFile = new File(path);
             chunkFile.getParentFile().mkdirs();
+            long oldSize = chunkFile.exists() ? chunkFile.length() : 0;
             try(FileOutputStream fos = new FileOutputStream(chunkFile)) {
                 fos.write(chunkData);
             }
+            freeSpace += oldSize;
             freeSpace -= chunkData.length;
             String checksum = computeChecksum(chunkData);
             ChunkMetadata metadata = new ChunkMetadata(destination, chunkIndex, checksum, chunkData.length);
             synchronized (lock) {
+
+                allChunks.removeIf(m ->
+                        m.getFileName().equals(destination) &&
+                                m.getChunkIndex() == chunkIndex);
+                newChunkMetadata.removeIf(m ->
+                        m.getFileName().equals(destination) &&
+                                m.getChunkIndex() == chunkIndex);
+
                 allChunks.add(metadata);
                 newChunkMetadata.add(metadata);
             }
@@ -143,33 +154,37 @@ public class ChunkServer implements Node {
     }
 
     private void sendMinorHeartbeat() {
+        List<ChunkMetadata> sendNew;
         synchronized (lock) {
-            List<ChunkMetadata> sendNew = new ArrayList<>(newChunkMetadata);
-            Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendNew);
-            try{
-                if(controllerConn != null) {
-                    controllerConn.sender.sendData(heartbeat.getBytes());
-                    log.info("Sent minor heartbeat with " + sendNew.size() + " new chunks");
-                }
-            } catch(IOException e) {
-                warning.accept(e);
+            sendNew = new ArrayList<>(newChunkMetadata);
+        }
+        Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendNew);
+        try{
+            if(controllerConn != null) {
+                controllerConn.sender.sendData(heartbeat.getBytes());
+                //log.info("Sent minor heartbeat with " + sendNew.size() + " new chunks");
             }
+        } catch(IOException e) {
+            warning.accept(e);
+        }
+        synchronized (lock) {
             newChunkMetadata.clear();
         }
     }
 
     private void sendMajorHeartbeat() {
+        List<ChunkMetadata> sendAll;
         synchronized (lock) {
-            List<ChunkMetadata> sendAll = new ArrayList<>(allChunks);
-            Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendAll);
-            try{
-                if(controllerConn != null) {
-                    controllerConn.sender.sendData(heartbeat.getBytes());
-                    log.info("Sent minor heartbeat with " + sendAll.size() + " new chunks");
-                }
-            } catch(IOException e) {
-                warning.accept(e);
+            sendAll = new ArrayList<>(allChunks);
+        }
+        Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendAll);
+        try{
+            if(controllerConn != null) {
+                controllerConn.sender.sendData(heartbeat.getBytes());
+                //log.info("Sent major heartbeat with " + sendAll.size() + " total chunks");
             }
+        } catch(IOException e) {
+            warning.accept(e);
         }
     }
 
@@ -204,7 +219,7 @@ public class ChunkServer implements Node {
 
     private void printStoredChunks() {
         for(ChunkMetadata chunk : allChunks) {
-            log.info("Checksum: " + chunk);
+            log.info("Chunk: " + chunk.getFileName() + " index=" + chunk.getChunkIndex() + " checksum=" + chunk.getChecksum());
         }
     }
 
@@ -216,6 +231,5 @@ public class ChunkServer implements Node {
         LogConfig.init(Level.INFO);
         ChunkServer server = new ChunkServer(args[0], Integer.parseInt(args[1]));
         new Thread(server::startNode).start();
-        new Thread(server::startHeartbeat).start();
     }
 }

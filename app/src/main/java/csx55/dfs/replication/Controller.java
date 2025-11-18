@@ -90,19 +90,22 @@ public class Controller implements Node {
     }
 
     private Queue<ConnInfo> selectServers() {
-        Queue<ConnInfo> servers = new LinkedList<>();
+        Queue<ConnInfo> chosen = new LinkedList<>();
         synchronized (lock) {
             List<ChunkServerMetadata> temp = new ArrayList<>();
-            for(int i = 0; i < 3; i++){
+            for (int i = 0; i < 3; i++) {
                 ChunkServerMetadata server = serversBySpace.poll();
-                assert server != null;
-                servers.add(server.getConnInfo());
+                if (server == null) break;
+                chosen.add(server.getConnInfo());
                 temp.add(server);
+                long newFree = server.getFreeSpace() - 65536; // update this while in-between heart beats
+                server.setFreeSpace(newFree);
             }
             serversBySpace.addAll(temp);
         }
-        return servers;
+        return chosen;
     }
+
 
     private void handleRegisterRequest(Event event, Socket socket) {
         log.info("Register request detected. Checking status...");
@@ -131,9 +134,8 @@ public class Controller implements Node {
         }
         if(chunks.isEmpty()) { return; } // nothing to do
         for(ChunkMetadata chunk : chunks) {
-            files.computeIfAbsent(chunk.getFileName(), k -> new ConcurrentHashMap<>()).put(chunk.getChunkIndex(), new HashSet<>()).add(chunkServerInfo);
+            files.computeIfAbsent(chunk.getFileName(), k -> new ConcurrentHashMap<>()).computeIfAbsent(chunk.getChunkIndex(), k -> new HashSet<>()).add(chunkServerInfo); // update metadata when uploading same file?
         }
-
     }
 
     private void updateSpace(ChunkServerMetadata metaData, long freeSpace) {
@@ -143,6 +145,7 @@ public class Controller implements Node {
             serversBySpace.add(metaData);
         }
     }
+
 
     public static void main(String[] args) {
         LogConfig.init(Level.INFO);
