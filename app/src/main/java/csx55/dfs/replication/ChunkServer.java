@@ -96,6 +96,8 @@ public class ChunkServer implements Node {
             freeSpace -= chunkData.length;
             if(!servers.isEmpty()){
                 forward(storeRequest, servers);
+            } else {
+                log.info(() -> "Last chunk has been stored successfully....");
             }
         } catch (IOException e) {
             warning.accept(e);
@@ -109,8 +111,8 @@ public class ChunkServer implements Node {
             StoreRequest newRequest = new StoreRequest(Protocol.STORE_REQUEST, oldRequest.getChunkData(), oldRequest.getChunkIndex(), oldRequest.getDestination(), oldRequest.getNetID(), servers);
             Socket socket = new Socket(nextServer.getIP(), nextServer.getPort());
             TCPConnection conn = new TCPConnection(socket, this);
-            conn.startReceiverThread();
             conn.sender.sendData(newRequest.getBytes());
+            socket.close();
         } catch(Exception e) {
             warning.accept(e);
         }

@@ -62,6 +62,7 @@ public class Client implements Node{
     @Override
     public void startNode() {
         try(ServerSocket serverSocket = new ServerSocket(0)) {
+            log.info("Starting client on port " + serverSocket.getLocalPort());
              while(true) {
                 Socket clientSocket = serverSocket.accept();
                 InetSocketAddress client = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
@@ -142,15 +143,16 @@ public class Client implements Node{
         try {
             Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
             TCPConnection conn = new  TCPConnection(socket, this);
-            ServerRequest serverRequest = new ServerRequest(Protocol.SERVER_REQUEST);
-            conn.sender.sendData(serverRequest.getBytes());
             conn.startReceiverThread();
             socketToConn.put(socket, conn);
+            ServerRequest serverRequest = new ServerRequest(Protocol.SERVER_REQUEST);
+            conn.sender.sendData(serverRequest.getBytes());
             Queue<ConnInfo> response = responseQueue.poll(1, TimeUnit.SECONDS);
-            socket.close();
             if(response != null) {
                 servers.addAll(response);
+                log.info("Received " + servers.size() + " servers: " + servers);
             }
+            socket.close();
         } catch(IOException | InterruptedException e) {
             warning.accept(e);
         }
@@ -164,8 +166,8 @@ public class Client implements Node{
             StoreRequest storeRequest = new StoreRequest(Protocol.STORE_REQUEST, chunk.getData(), chunk.getChunkIndex(), destination, netID, servers);
             Socket socket = new Socket(firstServer.getIP(), firstServer.getPort());
             TCPConnection  conn = new TCPConnection(socket, this);
-            conn.startReceiverThread();
             conn.sender.sendData(storeRequest.getBytes());
+            socket.close();
         } catch(IOException e) {
             warning.accept(e);
         }
