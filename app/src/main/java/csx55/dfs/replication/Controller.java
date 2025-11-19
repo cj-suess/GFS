@@ -210,7 +210,7 @@ public class Controller implements Node {
 
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         Controller controller = new Controller(Integer.parseInt(args[0]));
         new Thread(controller::startNode).start();
         new Thread(controller::readTerminal).start();

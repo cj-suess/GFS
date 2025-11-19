@@ -255,7 +255,7 @@ public class ChunkServer implements Node {
     public long getFreeSpace() { return freeSpace; }
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         ChunkServer server = new ChunkServer(args[0], Integer.parseInt(args[1]));
         new Thread(server::startNode).start();
     }

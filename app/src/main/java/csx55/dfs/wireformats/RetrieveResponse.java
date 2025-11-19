@@ -9,7 +9,7 @@ public class RetrieveResponse extends Event {
     private final int messageType;
     private final ConnInfo connInfo;
     private final byte[] chunkData;
-    private Map<Integer, String> checksums;
+    private final Map<Integer, String> checksums;
 
     public RetrieveResponse(int messageType, ConnInfo connInfo) {
         this.messageType = messageType;

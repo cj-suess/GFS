@@ -289,7 +289,7 @@ public class Client implements Node{
     }
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         Client client = new Client(args[0], Integer.parseInt(args[1]));
         new Thread(client::startNode, "Node-" + client + "-Server").start();
         new Thread(client::readTerminal, "Node-" + client + "-Terminal").start();
