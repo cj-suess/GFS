@@ -2,6 +2,7 @@ package csx55.dfs.wireformats;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Map;
 import java.util.Queue;
 
 public class StoreRequest extends Event {
@@ -12,14 +13,16 @@ public class StoreRequest extends Event {
     private final String destination;
     private final String netID;
     private final Queue<ConnInfo> servers;
+    private final Map<Integer, String> checksums;
 
-    public StoreRequest(int messageType, byte[] chunkData, int chunkIndex, String destination, String netID,  Queue<ConnInfo> servers) {
+    public StoreRequest(int messageType, byte[] chunkData, int chunkIndex, String destination, String netID,  Queue<ConnInfo> servers,  Map<Integer, String> checksums) {
         this.messageType = messageType;
         this.chunkData = chunkData;
         this.chunkIndex = chunkIndex;
         this.destination = destination;
         this.netID = netID;
         this.servers =  servers;
+        this.checksums = checksums;
     }
 
     @Override
@@ -39,6 +42,11 @@ public class StoreRequest extends Event {
             writeString(dout, server.getIP());
             dout.writeInt(server.getPort());
         }
+        dout.writeInt(checksums.size());
+        for (Map.Entry<Integer, String> entry : checksums.entrySet()) {
+            dout.writeInt(entry.getKey());
+            writeString(dout, entry.getValue());
+        }
     }
 
     public byte[] getChunkData() { return chunkData; }
@@ -46,4 +54,5 @@ public class StoreRequest extends Event {
     public String getDestination() { return destination; }
     public String getNetID() { return netID; }
     public Queue<ConnInfo> getServers() { return servers; }
+    public Map<Integer, String> getChecksums() { return checksums; }
 }

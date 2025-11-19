@@ -9,7 +9,6 @@ import csx55.dfs.util.Protocol;
 
 import java.io.*;
 import java.net.*;
-import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -36,7 +35,8 @@ public class ChunkServer implements Node {
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
 
     private final List<ChunkMetadata> allChunks = new ArrayList<>();
-    private final List<ChunkMetadata> newChunkMetadata = new ArrayList<>();
+    private final List<ChunkMetadata> newChunks = new ArrayList<>();
+    private final Map<String, Map<Integer, Map<Integer, String>>> originalSliceChecksums = new ConcurrentHashMap<>();
 
     private long freeSpace;
 
@@ -94,11 +94,12 @@ public class ChunkServer implements Node {
         try(FileInputStream fis = new FileInputStream(chunkFile)) {
             int fileSize = (int) chunkFile.length();
             chunkData = new byte[fileSize];
-            int bytesRead = fis.read(chunkData);
+            fis.read(chunkData);
         } catch (Exception e) {
             warning.accept(e);
         }
-        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, chunkData);
+        Map<Integer, String> sliceChecksums = originalSliceChecksums.get(destination).get(chunkIndex);
+        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, chunkData, sliceChecksums);
         TCPConnection conn = socketToConn.get(socket);
         try{
             conn.sender.sendData(retrieveResponse.getBytes());
@@ -115,6 +116,7 @@ public class ChunkServer implements Node {
             String destination =  storeRequest.getDestination();
             String netID =   storeRequest.getNetID();
             Queue<ConnInfo> servers = storeRequest.getServers();
+            Map<Integer, String> sliceChecksums = storeRequest.getChecksums();
             String path = String.format("/tmp/%s/chunk_server/%s_chunk%d",netID,destination,chunkIndex);
             File chunkFile = new File(path);
             chunkFile.getParentFile().mkdirs();
@@ -128,11 +130,13 @@ public class ChunkServer implements Node {
             ChunkMetadata metadata = new ChunkMetadata(destination, chunkIndex, checksum, chunkData.length);
             synchronized (lock) {
 
+                originalSliceChecksums.computeIfAbsent(destination, k -> new ConcurrentHashMap<>()).put(chunkIndex, sliceChecksums);
+
                 allChunks.removeIf(m -> m.getFileName().equals(destination) && m.getChunkIndex() == chunkIndex);
-                newChunkMetadata.removeIf(m -> m.getFileName().equals(destination) && m.getChunkIndex() == chunkIndex);
+                newChunks.removeIf(m -> m.getFileName().equals(destination) && m.getChunkIndex() == chunkIndex);
 
                 allChunks.add(metadata);
-                newChunkMetadata.add(metadata);
+                newChunks.add(metadata);
             }
             printStoredChunks();
             log.info(() -> "Space remaining --> " + freeSpace);
@@ -150,7 +154,7 @@ public class ChunkServer implements Node {
         try{
             ConnInfo nextServer = servers.poll();
             log.info(() -> "Forwarding chunk to next server: " + nextServer);
-            StoreRequest newRequest = new StoreRequest(Protocol.STORE_REQUEST, oldRequest.getChunkData(), oldRequest.getChunkIndex(), oldRequest.getDestination(), oldRequest.getNetID(), servers);
+            StoreRequest newRequest = new StoreRequest(Protocol.STORE_REQUEST, oldRequest.getChunkData(), oldRequest.getChunkIndex(), oldRequest.getDestination(), oldRequest.getNetID(), servers, oldRequest.getChecksums());
             Socket socket = new Socket(nextServer.getIP(), nextServer.getPort());
             TCPConnection conn = new TCPConnection(socket, this);
             conn.sender.sendData(newRequest.getBytes());
@@ -175,7 +179,7 @@ public class ChunkServer implements Node {
     private void sendMinorHeartbeat() {
         List<ChunkMetadata> sendNew;
         synchronized (lock) {
-            sendNew = new ArrayList<>(newChunkMetadata);
+            sendNew = new ArrayList<>(newChunks);
         }
         Heartbeat heartbeat = new Heartbeat(Protocol.HEARTBEAT, getMyConnInfo(), getFreeSpace(), allChunks.size(), sendNew);
         try{
@@ -187,7 +191,7 @@ public class ChunkServer implements Node {
             warning.accept(e);
         }
         synchronized (lock) {
-            newChunkMetadata.clear();
+            newChunks.clear();
         }
     }
 

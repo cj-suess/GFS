@@ -50,7 +50,7 @@ public class EventFactory {
     private Event readRetrieveResponse(int messageType, DataInputStream dis) throws IOException {
         byte dataType = dis.readByte();
         if(dataType == 0) {
-            return new RetrieveResponse(messageType, readChunkData(dis));
+            return new RetrieveResponse(messageType, readChunkData(dis), readChecksums(dis));
         } else if(dataType == 1) {
             return new RetrieveResponse(messageType, readConnInfo(dis));
         }
@@ -71,7 +71,7 @@ public class EventFactory {
     }
 
     private Event readStoreRequest(int messageType, DataInputStream dis) throws IOException {
-        return new StoreRequest(messageType, readChunkData(dis), dis.readInt(), readString(dis), readString(dis), readServers(dis));
+        return new StoreRequest(messageType, readChunkData(dis), dis.readInt(), readString(dis), readString(dis), readServers(dis), readChecksums(dis));
     }
 
     private Event readRegisterRequest(int messageType, DataInputStream dis) throws IOException {
@@ -126,5 +126,15 @@ public class EventFactory {
             chunks.add(new ChunkMetadata(fileName, chunkIndex, checksum, size));
         }
         return chunks;
+    }
+
+    private Map<Integer, String> readChecksums(DataInputStream dis) throws IOException {
+        Map<Integer, String> checksums = new HashMap<>();
+        int mapSize = dis.readInt();
+        for(int i = 0; i < mapSize; i++) {
+            int checksum = dis.readInt();
+            checksums.put(checksum, readString(dis));
+        }
+        return checksums;
     }
 }

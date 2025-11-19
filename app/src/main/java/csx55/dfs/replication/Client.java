@@ -11,6 +11,8 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
@@ -178,6 +180,15 @@ public class Client implements Node{
             RetrieveResponse response = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS); // wait for response
             socket.close();
             assert response != null;
+            byte[] chunkData = response.getChunkData();
+            Map<Integer, String> originalChecksums = response.getChecksums();
+            Map<Integer,String> recomputedChecksums = recomputeChecksums(chunkData);
+            for(Map.Entry<Integer, String> checksums : originalChecksums.entrySet()) {
+                int sliceIndex = checksums.getKey();
+                if(!checksums.getValue().equals(recomputedChecksums.get(checksums.getKey()))) {
+                    System.out.println(server + " " + chunkIndex + " " + sliceIndex + " is corrupted");
+                }
+            }
             return response.getChunkData();
         } catch (IOException | InterruptedException e) {
             warning.accept(e);
@@ -201,6 +212,26 @@ public class Client implements Node{
             warning.accept(e);
         }
         return null;
+    }
+
+    private Map<Integer, String> recomputeChecksums(byte[] data) {
+        Map<Integer, String> slices = new LinkedHashMap<>();
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            int sliceIndex = 1;
+            int sliceSize = 8192;
+
+            for(int i = 0; i < data.length; i += sliceSize) {
+                byte[] slice = Arrays.copyOfRange(data, i, Math.min(i + sliceSize, data.length));
+                byte[] hash = md.digest(slice);
+                String checksum = converter.convertBytesToHex(hash);
+                slices.put(sliceIndex, checksum);
+                sliceIndex++;
+            }
+        } catch(NoSuchAlgorithmException e) {
+            warning.accept(e);
+        }
+        return slices;
     }
 
     private Queue<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
@@ -229,7 +260,8 @@ public class Client implements Node{
         try{
             ConnInfo firstServer = servers.poll();
             log.info("Sending chunk to first server in list --> " + firstServer);
-            StoreRequest storeRequest = new StoreRequest(Protocol.STORE_REQUEST, chunk.getData(), chunk.getChunkIndex(), destination, netID, servers);
+            StoreRequest storeRequest = new StoreRequest(Protocol.STORE_REQUEST, chunk.getData(), chunk.getChunkIndex(), destination, netID, servers, chunk.getSlices());
+            assert firstServer != null;
             Socket socket = new Socket(firstServer.getIP(), firstServer.getPort());
             TCPConnection  conn = new TCPConnection(socket, this);
             conn.sender.sendData(storeRequest.getBytes());
