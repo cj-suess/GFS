@@ -41,8 +41,25 @@ public class EventFactory {
                 Protocol.SERVER_REQUEST, this::readServerRequest,
                 Protocol.SERVER_RESPONSE, this::readServerResponse,
                 Protocol.HEARTBEAT, this::readHeartbeat,
-                Protocol.STORE_REQUEST, this::readStoreRequest
+                Protocol.STORE_REQUEST, this::readStoreRequest,
+                Protocol.RETRIEVE_REQUEST, this::readRetrieveRequest,
+                Protocol.RETRIEVE_RESPONSE, this::readRetrieveResponse
         );
+    }
+
+    private Event readRetrieveResponse(int messageType, DataInputStream dis) throws IOException {
+        byte dataType = dis.readByte();
+        if(dataType == 0) {
+            return new RetrieveResponse(messageType, readChunkData(dis));
+        } else if(dataType == 1) {
+            return new RetrieveResponse(messageType, readConnInfo(dis));
+        }
+        log.warning("Uh oh...");
+        return null;
+    }
+
+    private Event readRetrieveRequest(int messageType, DataInputStream dis) throws IOException {
+        return new RetrieveRequest(messageType, readString(dis), dis.readInt());
     }
 
     private Event readServerResponse(int messageType, DataInputStream dis) throws IOException {
