@@ -35,7 +35,7 @@ public class Client implements Node{
 
     private final Map<Socket, TCPConnection> socketToConn = new ConcurrentHashMap<>();
     private final Map<String, Map<Integer, Chunk>> files = new ConcurrentHashMap<>();
-    private final BlockingQueue<Queue<ConnInfo>> responseQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Event> responseQueue = new LinkedBlockingQueue<>();
 
     public Client(String ip, int port) {
         this.controllerInfo = new ConnInfo(ip, port);
@@ -58,7 +58,8 @@ public class Client implements Node{
     @Override
     public void startEvents() {
         events = Map.of(
-                Protocol.SERVER_RESPONSE, this::handleServerResponse
+                Protocol.SERVER_RESPONSE, this::handleServerResponse,
+                Protocol.RETRIEVE_RESPONSE, this::handleServerResponse
         );
     }
 
@@ -98,6 +99,27 @@ public class Client implements Node{
 
     private void startCommands() {
         commands.put("upload", this::upload);
+        commands.put("download", this::download);
+    }
+
+    private void download(String[] paths) {
+        String source = paths[0];
+        String destination = paths[1];
+        log.info("Downloading: " + source);
+        int totalNumChunks = 4;
+        try(FileOutputStream fos = new FileOutputStream(destination)) {
+            for(int chunkIndex = 1; chunkIndex <= totalNumChunks; chunkIndex++) {
+                ConnInfo server = requestChunkServer(source, chunkIndex);
+                assert server != null;
+                byte[] chunkData = requestChunkData(server, source, chunkIndex);
+                if(chunkData != null) {
+                    fos.write(chunkData);
+                    System.out.println(server);
+                }
+            }
+        } catch(Exception e) {
+            warning.accept(e);
+        }
     }
 
     private void upload(String[] paths) {
@@ -145,6 +167,42 @@ public class Client implements Node{
         return chunks;
     }
 
+    private byte[] requestChunkData(ConnInfo server, String fileName, int chunkIndex) {
+        try {
+            Socket socket = new Socket(server.getIP(), server.getPort());
+            TCPConnection conn = new TCPConnection(socket, this);
+            conn.startReceiverThread();
+            socketToConn.put(socket, conn);
+            RetrieveRequest request = new RetrieveRequest(Protocol.RETRIEVE_REQUEST, fileName, chunkIndex);
+            conn.sender.sendData(request.getBytes());
+            RetrieveResponse response = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS); // wait for response
+            socket.close();
+            assert response != null;
+            return response.getChunkData();
+        } catch (IOException | InterruptedException e) {
+            warning.accept(e);
+        }
+        return null;
+    }
+
+    private ConnInfo requestChunkServer(String fileName, int chunkIndex) {
+        try {
+            Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
+            TCPConnection conn = new TCPConnection(socket, this);
+            conn.startReceiverThread();
+            socketToConn.put(socket, conn);
+            RetrieveRequest request = new RetrieveRequest(Protocol.RETRIEVE_REQUEST, fileName, chunkIndex);
+            conn.sender.sendData(request.getBytes());
+            RetrieveResponse response = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS);
+            socket.close();
+            assert response != null;
+            return response.getConnInfo();
+        } catch (IOException | InterruptedException e) {
+            warning.accept(e);
+        }
+        return null;
+    }
+
     private Queue<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
         Queue<ConnInfo> servers = new LinkedList<>();
         try {
@@ -154,10 +212,11 @@ public class Client implements Node{
             socketToConn.put(socket, conn);
             ServerRequest serverRequest = new ServerRequest(Protocol.SERVER_REQUEST);
             conn.sender.sendData(serverRequest.getBytes());
-            Queue<ConnInfo> response = responseQueue.poll(5, TimeUnit.SECONDS);
-            if(response != null) {
-                servers.addAll(response);
-                log.info("Received " + servers.size() + " servers: " + servers);
+            Event event = responseQueue.poll(5, TimeUnit.SECONDS);
+            if(event instanceof ServerResponse) {
+                ServerResponse serverResponse = (ServerResponse) event;
+                Queue<ConnInfo> serversFromResponse = serverResponse.getServers();
+                servers.addAll(serversFromResponse);
             }
             socket.close();
         } catch(IOException | InterruptedException e) {
@@ -181,9 +240,8 @@ public class Client implements Node{
     }
 
     private void handleServerResponse(Event event, Socket socket) {
-        ServerResponse serverResponse = (ServerResponse) event;
         try{
-            responseQueue.put(serverResponse.getServers());
+            responseQueue.put(event);
         } catch(InterruptedException e) {
             warning.accept(e);
         }
@@ -199,7 +257,7 @@ public class Client implements Node{
     }
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         Client client = new Client(args[0], Integer.parseInt(args[1]));
         new Thread(client::startNode, "Node-" + client + "-Server").start();
         new Thread(client::readTerminal, "Node-" + client + "-Terminal").start();

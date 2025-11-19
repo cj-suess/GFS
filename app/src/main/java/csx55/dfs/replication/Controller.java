@@ -57,7 +57,8 @@ public class Controller implements Node {
         events = Map.of(
                 Protocol.REGISTER_REQUEST, this::handleRegisterRequest,
                 Protocol.HEARTBEAT, this::handleHeartbeat,
-                Protocol.SERVER_REQUEST, this::handleServerRequest
+                Protocol.SERVER_REQUEST, this::handleServerRequest,
+                Protocol.RETRIEVE_REQUEST, this::handleRetrieveRequest
         );
     }
 
@@ -98,23 +99,20 @@ public class Controller implements Node {
         commands.put("print-files", this::printFiles);
     }
 
-    private void printFiles() {
-        log.info("========== CURRENT FILES ==========");
-        for (Map.Entry<String, Map<Integer, Set<ConnInfo>>> fileEntry : files.entrySet()) {
-            String fileName = fileEntry.getKey();
-            log.info("File: " + fileName);
-            Map<Integer, Set<ConnInfo>> chunkMap = fileEntry.getValue();
-            List<Integer> sortedChunks = new ArrayList<>(chunkMap.keySet());
-            Collections.sort(sortedChunks);
-            for (Integer chunkIndex : sortedChunks) {
-                log.info("   Chunk " + chunkIndex + " stored on:");
-                for (ConnInfo server : chunkMap.get(chunkIndex)) {
-                    log.info("      - " + server);
-                }
-            }
+    private void handleRetrieveRequest(Event event, Socket socket) {
+        RetrieveRequest retrieveRequest = (RetrieveRequest) event;
+        String fileName = retrieveRequest.getFileName();
+        int chunkIndex = retrieveRequest.getChunkIndex();
+        Set<ConnInfo> chunkServers = files.get(fileName).get(chunkIndex);
+        ConnInfo selectedServer = getRandomServer(chunkServers);
+        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, selectedServer);
+        TCPConnection conn = socketToConn.get(socket);
+        try{
+            conn.sender.sendData(retrieveResponse.getBytes());
+        } catch(IOException e) {
+            warning.accept(e);
         }
     }
-
 
     private void handleServerRequest(Event event, Socket socket) {
         log.info(() -> "Received server request...");
@@ -186,9 +184,33 @@ public class Controller implements Node {
         }
     }
 
+    private ConnInfo getRandomServer(Set<ConnInfo> servers) {
+        List<ConnInfo> temp = new ArrayList<>(servers);
+        Random rand =  new Random();
+        int index =  rand.nextInt(temp.size());
+        return temp.get(index);
+    }
+
+    private void printFiles() {
+        log.info("========== CURRENT FILES ==========");
+        for (Map.Entry<String, Map<Integer, Set<ConnInfo>>> fileEntry : files.entrySet()) {
+            String fileName = fileEntry.getKey();
+            log.info("File: " + fileName);
+            Map<Integer, Set<ConnInfo>> chunkMap = fileEntry.getValue();
+            List<Integer> sortedChunks = new ArrayList<>(chunkMap.keySet());
+            Collections.sort(sortedChunks);
+            for (Integer chunkIndex : sortedChunks) {
+                log.info("   Chunk " + chunkIndex + " stored on:");
+                for (ConnInfo server : chunkMap.get(chunkIndex)) {
+                    log.info("      - " + server);
+                }
+            }
+        }
+    }
+
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         Controller controller = new Controller(Integer.parseInt(args[0]));
         new Thread(controller::startNode).start();
         new Thread(controller::readTerminal).start();

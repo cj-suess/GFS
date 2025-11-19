@@ -7,10 +7,9 @@ import csx55.dfs.wireformats.*;
 import csx55.dfs.util.LogConfig;
 import csx55.dfs.util.Protocol;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.*;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -60,7 +59,8 @@ public class ChunkServer implements Node {
     @Override
     public void startEvents() {
         events = Map.of(
-            Protocol.STORE_REQUEST, this::handleStoreRequest
+            Protocol.STORE_REQUEST, this::handleStoreRequest,
+            Protocol.RETRIEVE_REQUEST, this::handleRetrieveRequest
         );
     }
 
@@ -84,6 +84,29 @@ public class ChunkServer implements Node {
         }
     }
 
+    private void handleRetrieveRequest(Event event, Socket socket) {
+        RetrieveRequest retrieveRequest = (RetrieveRequest) event;
+        String destination = retrieveRequest.getFileName();
+        int chunkIndex =  retrieveRequest.getChunkIndex();
+        String path = String.format("/tmp/%s/chunk_server/%s_chunk%d","camsuess", destination,chunkIndex);
+        File chunkFile = new File(path);
+        byte[] chunkData = null;
+        try(FileInputStream fis = new FileInputStream(chunkFile)) {
+            int fileSize = (int) chunkFile.length();
+            chunkData = new byte[fileSize];
+            int bytesRead = fis.read(chunkData);
+        } catch (Exception e) {
+            warning.accept(e);
+        }
+        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, chunkData);
+        TCPConnection conn = socketToConn.get(socket);
+        try{
+            conn.sender.sendData(retrieveResponse.getBytes());
+        } catch(IOException e) {
+            warning.accept(e);
+        }
+    }
+
     private void handleStoreRequest(Event event, Socket socket) {
         try{
             StoreRequest storeRequest = (StoreRequest) event;
@@ -95,7 +118,7 @@ public class ChunkServer implements Node {
             String path = String.format("/tmp/%s/chunk_server/%s_chunk%d",netID,destination,chunkIndex);
             File chunkFile = new File(path);
             chunkFile.getParentFile().mkdirs();
-            long oldSize = chunkFile.exists() ? chunkFile.length() : 0;
+            long oldSize = chunkFile.exists() ? chunkFile.length() : 0; // for overwriting to keep freeSpace accurate
             try(FileOutputStream fos = new FileOutputStream(chunkFile)) {
                 fos.write(chunkData);
             }
@@ -228,7 +251,7 @@ public class ChunkServer implements Node {
     public long getFreeSpace() { return freeSpace; }
 
     public static void main(String[] args) {
-        LogConfig.init(Level.INFO);
+        LogConfig.init(Level.WARNING);
         ChunkServer server = new ChunkServer(args[0], Integer.parseInt(args[1]));
         new Thread(server::startNode).start();
     }

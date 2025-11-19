@@ -6,5 +6,6 @@ public interface Protocol {
     int SERVER_REQUEST = 3;
     int SERVER_RESPONSE = 4;
     int STORE_REQUEST = 5;
-    int STORE_RESPONSE = 6;
+    int RETRIEVE_REQUEST = 6;
+    int RETRIEVE_RESPONSE = 7;
 }
