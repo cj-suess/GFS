@@ -105,20 +105,21 @@ public class Client implements Node{
     }
 
     private void download(String[] paths) {
+        StringBuilder sb = new StringBuilder();
         String source = paths[0];
         String destination = paths[1];
         log.info("Downloading: " + source);
         int totalNumChunks = 4;
         try(FileOutputStream fos = new FileOutputStream(destination)) {
             for(int chunkIndex = 1; chunkIndex <= totalNumChunks; chunkIndex++) {
-                ConnInfo server = requestChunkServer(source, chunkIndex);
-                assert server != null;
-                byte[] chunkData = requestChunkData(server, source, chunkIndex);
+                List<ConnInfo> servers = requestChunkServer(source, chunkIndex);
+                assert servers != null;
+                byte[] chunkData = requestChunkData(servers, source, chunkIndex, sb);
                 if(chunkData != null) {
                     fos.write(chunkData);
-                    System.out.println(server);
                 }
             }
+            System.out.println(sb);
         } catch(Exception e) {
             warning.accept(e);
         }
@@ -155,10 +156,6 @@ public class Client implements Node{
             while ((len = fis.read(buffer)) != -1) {
                 byte[] data = Arrays.copyOf(buffer, len);
                 Chunk chunk = new Chunk(data, chunkIndex);
-//                MessageDigest md = MessageDigest.getInstance("SHA-1");
-//                byte[] hash = md.digest(data);
-//                String checksum = converter.convertBytesToHex(hash);
-//                log.info(() -> "Checksum: " + checksum);
                 chunks.put(chunkIndex, chunk);
                 chunkIndex++;
             }
@@ -169,34 +166,42 @@ public class Client implements Node{
         return chunks;
     }
 
-    private byte[] requestChunkData(ConnInfo server, String fileName, int chunkIndex) {
-        try {
-            Socket socket = new Socket(server.getIP(), server.getPort());
-            TCPConnection conn = new TCPConnection(socket, this);
-            conn.startReceiverThread();
-            socketToConn.put(socket, conn);
-            RetrieveRequest request = new RetrieveRequest(Protocol.RETRIEVE_REQUEST, fileName, chunkIndex);
-            conn.sender.sendData(request.getBytes());
-            RetrieveResponse response = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS); // wait for response
-            socket.close();
-            assert response != null;
-            byte[] chunkData = response.getChunkData();
-            Map<Integer, String> originalChecksums = response.getChecksums();
-            Map<Integer,String> recomputedChecksums = recomputeChecksums(chunkData);
-            for(Map.Entry<Integer, String> checksums : originalChecksums.entrySet()) {
-                int sliceIndex = checksums.getKey();
-                if(!checksums.getValue().equals(recomputedChecksums.get(checksums.getKey()))) {
-                    System.out.println(server + " " + chunkIndex + " " + sliceIndex + " is corrupted");
+    private byte[] requestChunkData(List<ConnInfo> servers, String fileName, int chunkIndex, StringBuilder sb) {
+        for (ConnInfo server : servers) {
+            try (Socket socket = new Socket(server.getIP(), server.getPort())) {
+                TCPConnection conn = new TCPConnection(socket, this);
+                conn.startReceiverThread();
+                socketToConn.put(socket, conn);
+                RetrieveRequest retrieveRequest = new RetrieveRequest(Protocol.RETRIEVE_REQUEST, fileName, chunkIndex);
+                conn.sender.sendData(retrieveRequest.getBytes());
+                RetrieveResponse retrieveResponse = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS);
+                if (retrieveResponse == null) { continue; }
+                byte[] chunkData = retrieveResponse.getChunkData();
+                if (chunkData == null) { continue; }
+                Map<Integer, String> original = retrieveResponse.getChecksums();
+                Map<Integer, String> recomputed = recomputeChecksums(chunkData);
+                boolean corrupted = false;
+                for (Map.Entry<Integer, String> e : original.entrySet()) {
+                    int sliceIndex = e.getKey();
+                    if (!e.getValue().equals(recomputed.get(sliceIndex))) {
+                        System.out.println(server + " " + chunkIndex + " " + sliceIndex + " is corrupted");
+                        corrupted = true;
+                        break;
+                    }
                 }
+                if (!corrupted) {
+                    sb.append(server).append("\n");
+                    return chunkData;
+                }
+            } catch (IOException | InterruptedException e) {
+                warning.accept(e);
             }
-            return response.getChunkData();
-        } catch (IOException | InterruptedException e) {
-            warning.accept(e);
         }
         return null;
     }
 
-    private ConnInfo requestChunkServer(String fileName, int chunkIndex) {
+
+    private List<ConnInfo> requestChunkServer(String fileName, int chunkIndex) {
         try {
             Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
             TCPConnection conn = new TCPConnection(socket, this);
@@ -207,7 +212,7 @@ public class Client implements Node{
             RetrieveResponse response = (RetrieveResponse) responseQueue.poll(5, TimeUnit.SECONDS);
             socket.close();
             assert response != null;
-            return response.getConnInfo();
+            return response.getServers();
         } catch (IOException | InterruptedException e) {
             warning.accept(e);
         }
@@ -236,8 +241,7 @@ public class Client implements Node{
 
     private Queue<ConnInfo> requestServers() { // going to not use events for this part since getting server information back to upload is annoying
         Queue<ConnInfo> servers = new LinkedList<>();
-        try {
-            Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort());
+        try(Socket socket = new Socket(controllerInfo.getIP(), controllerInfo.getPort())) {
             TCPConnection conn = new  TCPConnection(socket, this);
             conn.startReceiverThread();
             socketToConn.put(socket, conn);
@@ -249,7 +253,6 @@ public class Client implements Node{
                 Queue<ConnInfo> serversFromResponse = serverResponse.getServers();
                 servers.addAll(serversFromResponse);
             }
-            socket.close();
         } catch(IOException | InterruptedException e) {
             warning.accept(e);
         }

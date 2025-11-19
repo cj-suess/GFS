@@ -52,7 +52,15 @@ public class EventFactory {
         if(dataType == 0) {
             return new RetrieveResponse(messageType, readChunkData(dis), readChecksums(dis));
         } else if(dataType == 1) {
-            return new RetrieveResponse(messageType, readConnInfo(dis));
+            int serverSize = dis.readInt();
+            List<ConnInfo> servers = new ArrayList<>();
+            for(int i = 0; i < serverSize; i++) {
+                String ip = readString(dis);
+                int port = dis.readInt();
+                ConnInfo connInfo = new ConnInfo(ip, port);
+                servers.add(connInfo);
+            }
+            return new RetrieveResponse(messageType, servers);
         }
         log.warning("Uh oh...");
         return null;

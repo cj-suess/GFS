@@ -104,8 +104,8 @@ public class Controller implements Node {
         String fileName = retrieveRequest.getFileName();
         int chunkIndex = retrieveRequest.getChunkIndex();
         Set<ConnInfo> chunkServers = files.get(fileName).get(chunkIndex);
-        ConnInfo selectedServer = getRandomServer(chunkServers);
-        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, selectedServer);
+        List<ConnInfo> replicas = new ArrayList<>(chunkServers);
+        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, replicas);
         TCPConnection conn = socketToConn.get(socket);
         try{
             conn.sender.sendData(retrieveResponse.getBytes());
