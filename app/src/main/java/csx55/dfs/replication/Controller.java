@@ -58,7 +58,8 @@ public class Controller implements Node {
                 Protocol.REGISTER_REQUEST, this::handleRegisterRequest,
                 Protocol.HEARTBEAT, this::handleHeartbeat,
                 Protocol.SERVER_REQUEST, this::handleServerRequest,
-                Protocol.RETRIEVE_REQUEST, this::handleRetrieveRequest
+                Protocol.RETRIEVE_REQUEST, this::handleRetrieveRequest,
+                Protocol.FIX_REQUEST, this::handleRetrieveRequest
         );
     }
 
@@ -104,13 +105,27 @@ public class Controller implements Node {
         String fileName = retrieveRequest.getFileName();
         int chunkIndex = retrieveRequest.getChunkIndex();
         Set<ConnInfo> chunkServers = files.get(fileName).get(chunkIndex);
-        ConnInfo selectedServer = getRandomServer(chunkServers);
-        RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, selectedServer);
-        TCPConnection conn = socketToConn.get(socket);
-        try{
-            conn.sender.sendData(retrieveResponse.getBytes());
-        } catch(IOException e) {
-            warning.accept(e);
+        if(retrieveRequest.getType() == Protocol.RETRIEVE_REQUEST){
+            ConnInfo selectedServer = getRandomServer(chunkServers);
+            RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.RETRIEVE_RESPONSE, selectedServer);
+            TCPConnection conn = socketToConn.get(socket);
+            try{
+                conn.sender.sendData(retrieveResponse.getBytes());
+            } catch(IOException e) {
+                warning.accept(e);
+            }
+        } else if(retrieveRequest.getType() == Protocol.FIX_REQUEST) {
+            ConnInfo selectedServer = retrieveRequest.getConnInfo();
+            while(selectedServer == retrieveRequest.getConnInfo())  {
+                selectedServer = getRandomServer(chunkServers);
+            }
+            RetrieveResponse retrieveResponse = new RetrieveResponse(Protocol.FIX_RESPONSE, selectedServer);
+            TCPConnection conn = socketToConn.get(socket);
+            try{
+                conn.sender.sendData(retrieveResponse.getBytes());
+            } catch(IOException e) {
+                warning.accept(e);
+            }
         }
     }
 

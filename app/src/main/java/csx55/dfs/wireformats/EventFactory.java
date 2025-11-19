@@ -43,7 +43,8 @@ public class EventFactory {
                 Protocol.HEARTBEAT, this::readHeartbeat,
                 Protocol.STORE_REQUEST, this::readStoreRequest,
                 Protocol.RETRIEVE_REQUEST, this::readRetrieveRequest,
-                Protocol.RETRIEVE_RESPONSE, this::readRetrieveResponse
+                Protocol.RETRIEVE_RESPONSE, this::readRetrieveResponse,
+                Protocol.FIX_RESPONSE, this::readRetrieveResponse
         );
     }
 
@@ -59,7 +60,14 @@ public class EventFactory {
     }
 
     private Event readRetrieveRequest(int messageType, DataInputStream dis) throws IOException {
-        return new RetrieveRequest(messageType, readString(dis), dis.readInt());
+        byte  dataType = dis.readByte();
+        if(dataType == 0) {
+            return new RetrieveRequest(messageType, readString(dis), dis.readInt());
+        }  else if(dataType == 1) {
+            return new RetrieveRequest(messageType, readString(dis), dis.readInt(), readConnInfo(dis));
+        }
+        log.warning("Uh oh...");
+        return null;
     }
 
     private Event readServerResponse(int messageType, DataInputStream dis) throws IOException {
