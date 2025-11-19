@@ -2,25 +2,25 @@ package csx55.dfs.wireformats;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Map;
+import java.util.*;
 
 public class RetrieveResponse extends Event {
 
     private final int messageType;
-    private final ConnInfo connInfo;
+    private List<ConnInfo> servers;
     private final byte[] chunkData;
     private final Map<Integer, String> checksums;
 
-    public RetrieveResponse(int messageType, ConnInfo connInfo) {
+    public RetrieveResponse(int messageType, List<ConnInfo> servers) {
         this.messageType = messageType;
-        this.connInfo = connInfo;
+        this.servers = servers;
         this.chunkData = null;
         this.checksums = null;
     }
 
     public RetrieveResponse(int messageType, byte[] chunkData, Map<Integer, String> checksums) {
         this.messageType = messageType;
-        this.connInfo = null;
+        this.servers = null;
         this.chunkData = chunkData;
         this.checksums = checksums;
     }
@@ -41,15 +41,18 @@ public class RetrieveResponse extends Event {
                 dout.writeInt(entry.getKey());
                 writeString(dout, entry.getValue());
             }
-        } else if(connInfo != null) {
+        } else if(servers != null) {
             dout.writeByte(1);
-            writeString(dout, connInfo.getIP());
-            dout.writeInt(connInfo.getPort());
+            dout.writeInt(servers.size());
+            for (ConnInfo server : servers) {
+                writeString(dout, server.getIP());
+                dout.writeInt(server.getPort());
+            }
         }
     }
 
-    public ConnInfo getConnInfo() {
-        return connInfo;
+    public List<ConnInfo> getServers() {
+        return servers;
     }
     public byte[] getChunkData() {
         return chunkData;

@@ -43,8 +43,7 @@ public class EventFactory {
                 Protocol.HEARTBEAT, this::readHeartbeat,
                 Protocol.STORE_REQUEST, this::readStoreRequest,
                 Protocol.RETRIEVE_REQUEST, this::readRetrieveRequest,
-                Protocol.RETRIEVE_RESPONSE, this::readRetrieveResponse,
-                Protocol.FIX_RESPONSE, this::readRetrieveResponse
+                Protocol.RETRIEVE_RESPONSE, this::readRetrieveResponse
         );
     }
 
@@ -53,21 +52,22 @@ public class EventFactory {
         if(dataType == 0) {
             return new RetrieveResponse(messageType, readChunkData(dis), readChecksums(dis));
         } else if(dataType == 1) {
-            return new RetrieveResponse(messageType, readConnInfo(dis));
+            int serverSize = dis.readInt();
+            List<ConnInfo> servers = new ArrayList<>();
+            for(int i = 0; i < serverSize; i++) {
+                String ip = readString(dis);
+                int port = dis.readInt();
+                ConnInfo connInfo = new ConnInfo(ip, port);
+                servers.add(connInfo);
+            }
+            return new RetrieveResponse(messageType, servers);
         }
         log.warning("Uh oh...");
         return null;
     }
 
     private Event readRetrieveRequest(int messageType, DataInputStream dis) throws IOException {
-        byte  dataType = dis.readByte();
-        if(dataType == 0) {
-            return new RetrieveRequest(messageType, readString(dis), dis.readInt());
-        }  else if(dataType == 1) {
-            return new RetrieveRequest(messageType, readString(dis), dis.readInt(), readConnInfo(dis));
-        }
-        log.warning("Uh oh...");
-        return null;
+        return new RetrieveRequest(messageType, readString(dis), dis.readInt());
     }
 
     private Event readServerResponse(int messageType, DataInputStream dis) throws IOException {
